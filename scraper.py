@@ -1,12 +1,17 @@
 import re
 import time
 
-import requests
 from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from webdriver_manager.chrome import ChromeDriverManager
 
-from config import EXPERIENCE_LEVELS, LOCATION, TIME_FILTER, get_random_user_agent
+from config import EXPERIENCE_LEVELS, LOCATION, TIME_FILTER
 
-# Skip jobs with these words in the title (experienced/senior roles)
 EXCLUDE_TITLE_KEYWORDS = [
     "senior", "sr.", "sr ", "lead", "principal", "staff", "manager",
     "director", "head of", "vp ", "vice president", "architect",
@@ -15,72 +20,106 @@ EXCLUDE_TITLE_KEYWORDS = [
     "years", "yrs",
     "l4", "l5", "l6", "l7",
     "sde 3", "sde3", "sde-3", "sde iii", "sde-iii",
-    "associate 2", "associate 3",
     "technologist",
 ]
 
-# Only notify jobs that match at least one of these (fresher-friendly titles)
-INCLUDE_TITLE_KEYWORDS = [
-    "intern", "fresher", "junior", "jr.", "jr ",
-    "entry level", "entry-level", "trainee", "graduate",
-    "associate", "analyst",
-    "sde 1", "sde1", "sde-1", "sde i", "sde-i",
-    "l1", "l2", "l3",
-    "python", "data scientist", "data science", "data engineer",
-    "ml engineer", "machine learning", "ai engineer", "ai/ml",
-    "developer", "software engineer",
-]
+_driver = None
+
+
+def get_driver():
+    global _driver
+    if _driver is not None:
+        return _driver
+
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+
+    service = Service(ChromeDriverManager().install())
+    _driver = webdriver.Chrome(service=service, options=options)
+    return _driver
+
+
+def linkedin_login(email, password):
+    driver = get_driver()
+    driver.get("https://www.linkedin.com/login")
+    time.sleep(2)
+
+    try:
+        email_field = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "username"))
+        )
+        email_field.send_keys(email)
+        driver.find_element(By.ID, "password").send_keys(password)
+        driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
+        time.sleep(3)
+
+        if "feed" in driver.current_url or "mynetwork" in driver.current_url:
+            print("  LinkedIn login successful!")
+            return True
+        elif "checkpoint" in driver.current_url or "challenge" in driver.current_url:
+            print("  [WARN] LinkedIn requires verification. Waiting 60s...")
+            time.sleep(60)
+            return "feed" in driver.current_url
+        else:
+            print(f"  [ERROR] Login may have failed. URL: {driver.current_url}")
+            return False
+    except Exception as e:
+        print(f"  [ERROR] Login failed: {e}")
+        return False
+
+
+def build_search_url(keyword):
+    params = [
+        f"keywords={keyword.replace(' ', '%20')}",
+        f"location={LOCATION.replace(' ', '%20').replace(',', '%2C')}",
+        f"f_TPR={TIME_FILTER}",
+    ]
+    if EXPERIENCE_LEVELS:
+        params.append(f"f_E={'%2C'.join(EXPERIENCE_LEVELS)}")
+    return f"https://www.linkedin.com/jobs/search/?{'&'.join(params)}"
 
 
 def scrape_jobs(keyword):
-    """Scrape LinkedIn public job search page for a given keyword.
+    driver = get_driver()
+    url = build_search_url(keyword)
 
-    Returns a list of dicts with keys: job_id, title, company, location, url, keyword
-    """
-    headers = {
-        "User-Agent": get_random_user_agent(),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-    }
+    try:
+        driver.get(url)
+        time.sleep(3)
 
-    params = {
-        "keywords": keyword,
-        "location": LOCATION,
-        "f_TPR": TIME_FILTER,
-        "f_E": ",".join(EXPERIENCE_LEVELS),
-    }
+        for _ in range(3):
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
 
-    # Try guest API first, fall back to public search page
-    urls = [
-        "https://www.linkedin.com/jobs-guest/jobs/api/sideBarJobCount",
-        "https://www.linkedin.com/jobs/search/",
-    ]
-    for base_url in urls:
-        try:
-            response = requests.get(base_url, params=params, headers=headers, timeout=15)
-            response.raise_for_status()
-        except requests.RequestException as e:
-            print(f"  [WARN] {base_url} failed: {e}")
-            continue
-
-        soup = BeautifulSoup(response.text, "lxml")
-        jobs = parse_job_cards(soup, keyword)
-        if jobs:
-            return jobs
-
-    return []
+        soup = BeautifulSoup(driver.page_source, "lxml")
+        return parse_job_cards(soup, keyword)
+    except Exception as e:
+        print(f"  [ERROR] Failed to scrape '{keyword}': {e}")
+        return []
 
 
 def parse_job_cards(soup, keyword):
-    """Parse job cards from LinkedIn HTML response."""
     jobs = []
+
     job_cards = soup.find_all("div", class_="base-card")
+    if not job_cards:
+        job_cards = soup.find_all("li", class_="jobs-search-results__list-item")
+    if not job_cards:
+        job_cards = soup.find_all("div", class_="job-card-container")
 
     for card in job_cards:
         try:
-            link_tag = card.find("a", class_="base-card__full-link")
+            link_tag = (
+                card.find("a", class_="base-card__full-link")
+                or card.find("a", class_="job-card-container__link")
+                or card.find("a", href=re.compile(r"/jobs/view/"))
+            )
             if not link_tag:
                 continue
 
@@ -89,28 +128,30 @@ def parse_job_cards(soup, keyword):
             if not job_id:
                 continue
 
-            title_tag = card.find("h3", class_="base-search-card__title")
-            title = title_tag.get_text(strip=True) if title_tag else "Unknown Title"
+            title = _get_text(card, [
+                ("h3", "base-search-card__title"),
+                ("a", "job-card-list__title"),
+                ("h3", None),
+            ], "Unknown Title")
 
-            company_tag = card.find("h4", class_="base-search-card__subtitle")
-            company = company_tag.get_text(strip=True) if company_tag else "Unknown Company"
+            company = _get_text(card, [
+                ("h4", "base-search-card__subtitle"),
+                ("span", "job-card-container__primary-description"),
+                ("h4", None),
+            ], "Unknown Company")
 
-            location_tag = card.find("span", class_="job-search-card__location")
-            location = location_tag.get_text(strip=True) if location_tag else "Unknown Location"
+            location = _get_text(card, [
+                ("span", "job-search-card__location"),
+                ("span", "job-card-container__metadata-item"),
+            ], "Unknown Location")
 
-            title_lower = title.lower()
-
-            # EXCLUDE: skip senior/experienced roles
-            if any(kw in title_lower for kw in EXCLUDE_TITLE_KEYWORDS):
-                print(f"    [SKIP] {title} (matched exclude filter)")
+            if any(kw in title.lower() for kw in EXCLUDE_TITLE_KEYWORDS):
+                print(f"    [SKIP] {title}")
                 continue
 
-            # INCLUDE: only keep fresher-friendly titles
-            if not any(kw in title_lower for kw in INCLUDE_TITLE_KEYWORDS):
-                print(f"    [SKIP] {title} (no fresher keyword match)")
-                continue
-
-            clean_url = job_url.split("?")[0] if "?" in job_url else job_url
+            clean_url = job_url.split("?")[0]
+            if not clean_url.startswith("http"):
+                clean_url = f"https://www.linkedin.com{clean_url}"
 
             jobs.append({
                 "job_id": job_id,
@@ -120,22 +161,30 @@ def parse_job_cards(soup, keyword):
                 "url": clean_url,
                 "keyword": keyword,
             })
-
         except Exception as e:
-            print(f"  [WARN] Failed to parse a job card: {e}")
-            continue
+            print(f"  [WARN] Failed to parse job card: {e}")
 
     return jobs
 
 
+def _get_text(card, selectors, default):
+    for tag, cls in selectors:
+        el = card.find(tag, class_=cls) if cls else card.find(tag)
+        if el:
+            return el.get_text(strip=True)
+    return default
+
+
 def extract_job_id(url):
-    """Extract the numeric job ID from a LinkedIn job URL."""
     try:
         path = url.split("?")[0].rstrip("/")
-        last_segment = path.split("/")[-1]
-        if last_segment.isdigit():
-            return last_segment
-        match = re.search(r"-(\d{5,})$", last_segment)
+        last = path.split("/")[-1]
+        if last.isdigit():
+            return last
+        match = re.search(r"-(\d{5,})$", last)
+        if match:
+            return match.group(1)
+        match = re.search(r"/view/(\d+)", url)
         if match:
             return match.group(1)
     except Exception:
@@ -144,12 +193,21 @@ def extract_job_id(url):
 
 
 def scrape_all_keywords(keywords):
-    """Scrape jobs for all keywords with a small delay between requests."""
     all_jobs = []
     for keyword in keywords:
-        print(f"  Scraping jobs for: {keyword}")
+        print(f"  Scraping: {keyword}")
         jobs = scrape_jobs(keyword)
         print(f"    Found {len(jobs)} job(s)")
         all_jobs.extend(jobs)
         time.sleep(2)
     return all_jobs
+
+
+def close_driver():
+    global _driver
+    if _driver:
+        try:
+            _driver.quit()
+        except Exception:
+            pass
+        _driver = None
