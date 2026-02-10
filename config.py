@@ -12,7 +12,6 @@ SEARCH_KEYWORDS = [
     "Python Developer",
     "ML Engineer",
     "AI Engineer",
-    "Data Engineer",
     "Software Engineer",
     # Junior/Intern variants
     "Junior Python Developer",
