@@ -22,8 +22,8 @@ LOCATION = "Bengaluru, Karnataka, India"
 # LinkedIn public job search base URL
 LINKEDIN_BASE_URL = "https://www.linkedin.com/jobs/search/"
 
-# f_TPR filter: r14400 = jobs posted in last 4 hours
-TIME_FILTER = "r14400"
+# f_TPR filter: r300 = jobs posted in last 5 minutes (matches 5-min cron)
+TIME_FILTER = "r300"
 
 # LinkedIn experience level filter (f_E parameter)
 # 1 = Internship, 2 = Entry level, 3 = Associate
