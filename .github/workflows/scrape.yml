@@ -42,6 +42,9 @@ jobs:
           git add seen_jobs.json
           if ! git diff --staged --quiet; then
             git commit -m "Update seen_jobs.json"
-            git pull --rebase origin master
-            git push
+            for i in 1 2 3; do
+              git pull --rebase origin master && git push && break
+              echo "Push attempt $i failed, retrying..."
+              sleep 2
+            done
           fi
