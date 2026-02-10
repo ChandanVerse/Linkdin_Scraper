@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"$env:DISCORD_WEBHOOK_URL=''https://discord.com/api/webhooks/1470664614000722036/Rqk4pGWnkTGluoDLbOZjN-MWESoyP819gelMHTLJKuP--emuLYNAGYnLgirrlhdGDbIs''; Set-Location ''C:\\\\Users\\\\chand\\\\Documents\\\\Linkdin_Scraper''; py main.py\")",
+      "Bash(cmd /c \"set DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/1470664614000722036/Rqk4pGWnkTGluoDLbOZjN-MWESoyP819gelMHTLJKuP--emuLYNAGYnLgirrlhdGDbIs && py main.py\")",
+      "Bash(cmd /c \"C:\\\\Users\\\\chand\\\\Documents\\\\Linkdin_Scraper\\\\run_test.bat\")",
+      "Bash(cmd //c:*)"
+    ]
+  }
+}
