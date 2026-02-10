@@ -39,12 +39,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Pull latest before committing to avoid conflicts
-          git stash
-          git pull origin master
-          git stash pop || true
           git add seen_jobs.json
           if ! git diff --staged --quiet; then
             git commit -m "Update seen_jobs.json"
-            git push
+            git pull --rebase origin master
+            git push || { git pull --rebase origin master && git push; } || { sleep 3 && git pull --rebase origin master && git push; }
           fi
