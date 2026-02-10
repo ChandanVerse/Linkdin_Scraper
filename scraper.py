@@ -1,3 +1,5 @@
+import json
+import os
 import re
 import time
 
@@ -10,7 +12,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
-from config import EXPERIENCE_LEVELS, LOCATION, TIME_FILTER
+from config import BLACKLISTED_COMPANIES, EXPERIENCE_LEVELS, LOCATION, TIME_FILTER
+
+COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "linkedin_cookies.json")
 
 EXCLUDE_TITLE_KEYWORDS = [
     "senior", "sr.", "sr ", "lead", "principal", "staff", "manager",
@@ -32,7 +36,6 @@ def get_driver():
         return _driver
 
     options = Options()
-    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
@@ -45,8 +48,46 @@ def get_driver():
     return _driver
 
 
+def _save_cookies(driver):
+    cookies = driver.get_cookies()
+    with open(COOKIES_FILE, "w") as f:
+        json.dump(cookies, f)
+    print(f"  Saved {len(cookies)} cookies to {COOKIES_FILE}")
+
+
+def _load_cookies(driver):
+    if not os.path.exists(COOKIES_FILE):
+        return False
+    try:
+        with open(COOKIES_FILE, "r") as f:
+            cookies = json.load(f)
+        driver.get("https://www.linkedin.com")
+        time.sleep(2)
+        for cookie in cookies:
+            cookie.pop("sameSite", None)
+            cookie.pop("expiry", None)
+            try:
+                driver.add_cookie(cookie)
+            except Exception:
+                pass
+        driver.get("https://www.linkedin.com/feed/")
+        time.sleep(3)
+        if "feed" in driver.current_url or "mynetwork" in driver.current_url:
+            print("  Restored session from saved cookies!")
+            return True
+        print("  Saved cookies expired, logging in fresh...")
+        return False
+    except Exception:
+        return False
+
+
 def linkedin_login(email, password):
     driver = get_driver()
+
+    # Try saved cookies first
+    if _load_cookies(driver):
+        return True
+
     driver.get("https://www.linkedin.com/login")
     time.sleep(2)
 
@@ -61,20 +102,20 @@ def linkedin_login(email, password):
 
         if "feed" in driver.current_url or "mynetwork" in driver.current_url:
             print("  LinkedIn login successful!")
+            _save_cookies(driver)
             return True
         elif "checkpoint" in driver.current_url or "challenge" in driver.current_url:
             print("  [WARN] LinkedIn requires verification.")
             print("  Complete the verification in the browser window...")
-            # Poll every 5s for up to 120s
             for i in range(24):
                 time.sleep(5)
                 try:
                     url = driver.current_url
                     if "feed" in url or "mynetwork" in url or "jobs" in url:
                         print("  LinkedIn login successful!")
+                        _save_cookies(driver)
                         return True
                 except Exception:
-                    # Browser was closed
                     print("  [ERROR] Browser closed during verification.")
                     _reset_driver()
                     return False
@@ -193,6 +234,10 @@ def parse_job_cards(soup, keyword):
 
             if any(kw in title.lower() for kw in EXCLUDE_TITLE_KEYWORDS):
                 print(f"    [SKIP] {title}")
+                continue
+
+            if any(bl in company.lower() for bl in BLACKLISTED_COMPANIES):
+                print(f"    [SKIP] {company} (blacklisted)")
                 continue
 
             clean_url = job_url.split("?")[0]

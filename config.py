@@ -25,14 +25,24 @@ SEARCH_KEYWORDS = [
 # Location for job search
 LOCATION = "Bengaluru, Karnataka, India"
 
-# f_TPR filter: r3600 = jobs posted in last 1 hour
-TIME_FILTER = "r3600"
+# f_TPR filter: r300 = jobs posted in last 5 minutes
+TIME_FILTER = "r300"
 
 # How often to run locally (in seconds)
-RUN_INTERVAL = 120
+RUN_INTERVAL = 300
 
 # Experience level filter: 1 = Internship, 2 = Entry level
 EXPERIENCE_LEVELS = ["1", "2"]
+
+# Blacklisted companies — jobs from these companies are skipped
+BLACKLISTED_COMPANIES = [
+    "skoollage",
+    "dexter's tech",
+    "sportsbuzz",
+    "webs it solution",
+    "zenithbyte",
+    "skillzenloop",
+]
 
 # Max seen job IDs to keep
 MAX_SEEN_JOBS = 5000
