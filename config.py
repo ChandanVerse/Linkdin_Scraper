@@ -4,20 +4,23 @@ import random
 # Discord webhook URL from environment variable (set as GitHub Secret)
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
-# Search keywords for LinkedIn job search (fresher/entry-level roles)
+# Search keywords — major roles first, then junior/intern variants
+# The scraper's title filter handles excluding senior roles
 SEARCH_KEYWORDS = [
+    # Major roles
+    "Data Scientist",
+    "Python Developer",
+    "ML Engineer",
+    "AI Engineer",
+    "Data Engineer",
+    "Software Engineer",
+    # Junior/Intern variants
     "Junior Python Developer",
-    "Python Developer Fresher",
     "Junior Data Scientist",
-    "Entry Level Data Scientist",
-    "AI/ML Engineer Intern",
-    "Junior ML Engineer",
     "AI Intern",
     "Data Science Intern",
     "ML Intern",
     "ML Engineer Intern",
-    "Junior Data Engineer",
-    "Entry Level AI Engineer",
 ]
 
 # Location for job search

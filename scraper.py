@@ -6,20 +6,34 @@ from bs4 import BeautifulSoup
 
 from config import EXPERIENCE_LEVELS, LOCATION, TIME_FILTER, get_random_user_agent
 
-# LinkedIn guest jobs API endpoint (returns HTML fragments, supports all filters)
-GUEST_API_URL = "https://www.linkedin.com/jobs-guest/jobs/api/sideBarJobCount"
-GUEST_JOBS_URL = "https://www.linkedin.com/jobs-guest/jobs/api/jobPostings/jobs"
-
-# Skip jobs with these words in the title (experienced roles)
-SENIOR_KEYWORDS = [
+# Skip jobs with these words in the title (experienced/senior roles)
+EXCLUDE_TITLE_KEYWORDS = [
     "senior", "sr.", "sr ", "lead", "principal", "staff", "manager",
     "director", "head of", "vp ", "vice president", "architect",
-    "10+", "8+", "7+", "6+", "5+",
+    "10+", "8+", "7+", "6+", "5+", "4+",
+    "14+", "12+", "11+", "9+",
+    "years", "yrs",
+    "l4", "l5", "l6", "l7",
+    "sde 3", "sde3", "sde-3", "sde iii", "sde-iii",
+    "associate 2", "associate 3",
+    "technologist",
+]
+
+# Only notify jobs that match at least one of these (fresher-friendly titles)
+INCLUDE_TITLE_KEYWORDS = [
+    "intern", "fresher", "junior", "jr.", "jr ",
+    "entry level", "entry-level", "trainee", "graduate",
+    "associate", "analyst",
+    "sde 1", "sde1", "sde-1", "sde i", "sde-i",
+    "l1", "l2", "l3",
+    "python", "data scientist", "data science", "data engineer",
+    "ml engineer", "machine learning", "ai engineer", "ai/ml",
+    "developer", "software engineer",
 ]
 
 
 def scrape_jobs(keyword):
-    """Scrape LinkedIn guest jobs API for a given keyword.
+    """Scrape LinkedIn public job search page for a given keyword.
 
     Returns a list of dicts with keys: job_id, title, company, location, url, keyword
     """
@@ -31,23 +45,24 @@ def scrape_jobs(keyword):
         "Connection": "keep-alive",
     }
 
-    # Build URL with experience level filter passed as separate params
     params = {
         "keywords": keyword,
         "location": LOCATION,
         "f_TPR": TIME_FILTER,
+        "f_E": ",".join(EXPERIENCE_LEVELS),
     }
-    # f_E needs to be passed as comma-separated values
-    if EXPERIENCE_LEVELS:
-        params["f_E"] = ",".join(EXPERIENCE_LEVELS)
 
     # Try guest API first, fall back to public search page
-    for base_url in [GUEST_JOBS_URL, "https://www.linkedin.com/jobs/search/"]:
+    urls = [
+        "https://www.linkedin.com/jobs-guest/jobs/api/sideBarJobCount",
+        "https://www.linkedin.com/jobs/search/",
+    ]
+    for base_url in urls:
         try:
             response = requests.get(base_url, params=params, headers=headers, timeout=15)
             response.raise_for_status()
         except requests.RequestException as e:
-            print(f"  [ERROR] Failed to fetch from {base_url}: {e}")
+            print(f"  [WARN] {base_url} failed: {e}")
             continue
 
         soup = BeautifulSoup(response.text, "lxml")
@@ -61,18 +76,11 @@ def scrape_jobs(keyword):
 def parse_job_cards(soup, keyword):
     """Parse job cards from LinkedIn HTML response."""
     jobs = []
-
-    # Try multiple selectors for different page formats
     job_cards = soup.find_all("div", class_="base-card")
-    if not job_cards:
-        job_cards = soup.find_all("li")
 
     for card in job_cards:
         try:
-            # Extract job URL and ID
             link_tag = card.find("a", class_="base-card__full-link")
-            if not link_tag:
-                link_tag = card.find("a", href=re.compile(r"/jobs/view/"))
             if not link_tag:
                 continue
 
@@ -81,30 +89,27 @@ def parse_job_cards(soup, keyword):
             if not job_id:
                 continue
 
-            # Extract title
             title_tag = card.find("h3", class_="base-search-card__title")
-            if not title_tag:
-                title_tag = card.find("h3")
             title = title_tag.get_text(strip=True) if title_tag else "Unknown Title"
 
-            # Extract company
             company_tag = card.find("h4", class_="base-search-card__subtitle")
-            if not company_tag:
-                company_tag = card.find("h4")
             company = company_tag.get_text(strip=True) if company_tag else "Unknown Company"
 
-            # Extract location
             location_tag = card.find("span", class_="job-search-card__location")
-            if not location_tag:
-                location_tag = card.find("span", class_="job-result-card__location")
             location = location_tag.get_text(strip=True) if location_tag else "Unknown Location"
 
-            # Skip senior/experienced roles based on title
             title_lower = title.lower()
-            if any(kw in title_lower for kw in SENIOR_KEYWORDS):
+
+            # EXCLUDE: skip senior/experienced roles
+            if any(kw in title_lower for kw in EXCLUDE_TITLE_KEYWORDS):
+                print(f"    [SKIP] {title} (matched exclude filter)")
                 continue
 
-            # Clean job URL (remove tracking params)
+            # INCLUDE: only keep fresher-friendly titles
+            if not any(kw in title_lower for kw in INCLUDE_TITLE_KEYWORDS):
+                print(f"    [SKIP] {title} (no fresher keyword match)")
+                continue
+
             clean_url = job_url.split("?")[0] if "?" in job_url else job_url
 
             jobs.append({
@@ -124,12 +129,7 @@ def parse_job_cards(soup, keyword):
 
 
 def extract_job_id(url):
-    """Extract the numeric job ID from a LinkedIn job URL.
-
-    URLs can be:
-      .../jobs/view/1234567890
-      .../jobs/view/python-developer-at-company-1234567890?...
-    """
+    """Extract the numeric job ID from a LinkedIn job URL."""
     try:
         path = url.split("?")[0].rstrip("/")
         last_segment = path.split("/")[-1]
