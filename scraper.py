@@ -63,15 +63,39 @@ def linkedin_login(email, password):
             print("  LinkedIn login successful!")
             return True
         elif "checkpoint" in driver.current_url or "challenge" in driver.current_url:
-            print("  [WARN] LinkedIn requires verification. Waiting 60s...")
-            time.sleep(60)
-            return "feed" in driver.current_url
+            print("  [WARN] LinkedIn requires verification.")
+            print("  Complete the verification in the browser window...")
+            # Poll every 5s for up to 120s
+            for i in range(24):
+                time.sleep(5)
+                try:
+                    url = driver.current_url
+                    if "feed" in url or "mynetwork" in url or "jobs" in url:
+                        print("  LinkedIn login successful!")
+                        return True
+                except Exception:
+                    # Browser was closed
+                    print("  [ERROR] Browser closed during verification.")
+                    _reset_driver()
+                    return False
+            print("  [WARN] Verification timed out after 120s.")
+            return False
         else:
             print(f"  [ERROR] Login may have failed. URL: {driver.current_url}")
             return False
     except Exception as e:
         print(f"  [ERROR] Login failed: {e}")
+        _reset_driver()
         return False
+
+
+def _reset_driver():
+    global _driver
+    try:
+        _driver.quit()
+    except Exception:
+        pass
+    _driver = None
 
 
 def build_search_url(keyword):
@@ -107,18 +131,22 @@ def scrape_jobs(keyword):
 def parse_job_cards(soup, keyword):
     jobs = []
 
-    job_cards = soup.find_all("div", class_="base-card")
+    # Logged-in view: scaffold-layout list items
+    job_cards = soup.find_all("li", class_=re.compile(r"jobs-search-results__list-item"))
     if not job_cards:
-        job_cards = soup.find_all("li", class_="jobs-search-results__list-item")
+        job_cards = soup.find_all("div", class_=re.compile(r"job-card-container"))
+    # Public view fallback
     if not job_cards:
-        job_cards = soup.find_all("div", class_="job-card-container")
+        job_cards = soup.find_all("div", class_="base-card")
 
     for card in job_cards:
         try:
+            # Extract job URL and ID
             link_tag = (
-                card.find("a", class_="base-card__full-link")
-                or card.find("a", class_="job-card-container__link")
+                card.find("a", class_=re.compile(r"job-card-list__title"))
+                or card.find("a", class_=re.compile(r"job-card-container__link"))
                 or card.find("a", href=re.compile(r"/jobs/view/"))
+                or card.find("a", class_="base-card__full-link")
             )
             if not link_tag:
                 continue
@@ -128,22 +156,40 @@ def parse_job_cards(soup, keyword):
             if not job_id:
                 continue
 
+            # Title — logged-in uses <a> with job-card-list__title or <strong>
             title = _get_text(card, [
-                ("h3", "base-search-card__title"),
                 ("a", "job-card-list__title"),
+                ("strong", None),
+                ("h3", "base-search-card__title"),
                 ("h3", None),
-            ], "Unknown Title")
+            ], None)
+            # Fallback: use link text itself
+            if not title and link_tag:
+                title = link_tag.get_text(strip=True)
+            if not title:
+                title = "Unknown Title"
 
-            company = _get_text(card, [
-                ("h4", "base-search-card__subtitle"),
-                ("span", "job-card-container__primary-description"),
-                ("h4", None),
-            ], "Unknown Company")
+            # Company — logged-in uses artdeco-entity-lockup__subtitle > span
+            company_div = card.find("div", class_=re.compile(r"artdeco-entity-lockup__subtitle"))
+            if company_div:
+                company_span = company_div.find("span")
+                company = company_span.get_text(strip=True) if company_span else "Unknown Company"
+            else:
+                company = _get_text(card, [
+                    ("span", "job-card-container__primary-description"),
+                    ("h4", "base-search-card__subtitle"),
+                ], "Unknown Company")
 
-            location = _get_text(card, [
-                ("span", "job-search-card__location"),
-                ("span", "job-card-container__metadata-item"),
-            ], "Unknown Location")
+            # Location — logged-in uses artdeco-entity-lockup__caption li > span
+            caption_div = card.find("div", class_=re.compile(r"artdeco-entity-lockup__caption"))
+            if caption_div:
+                loc_span = caption_div.find("span")
+                location = loc_span.get_text(strip=True) if loc_span else "Unknown Location"
+            else:
+                location = _get_text(card, [
+                    ("li", "job-card-container__metadata-item"),
+                    ("span", "job-search-card__location"),
+                ], "Unknown Location")
 
             if any(kw in title.lower() for kw in EXCLUDE_TITLE_KEYWORDS):
                 print(f"    [SKIP] {title}")
@@ -169,8 +215,11 @@ def parse_job_cards(soup, keyword):
 
 def _get_text(card, selectors, default):
     for tag, cls in selectors:
-        el = card.find(tag, class_=cls) if cls else card.find(tag)
-        if el:
+        if cls:
+            el = card.find(tag, class_=cls)
+        else:
+            el = card.find(tag)
+        if el and el.get_text(strip=True):
             return el.get_text(strip=True)
     return default
 
