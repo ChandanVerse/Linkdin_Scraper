@@ -5,7 +5,7 @@ import urllib.parse
 import requests
 from bs4 import BeautifulSoup
 
-from config import LINKEDIN_BASE_URL, LOCATION, TIME_FILTER, get_random_user_agent
+from config import EXPERIENCE_LEVELS, LINKEDIN_BASE_URL, LOCATION, TIME_FILTER, get_random_user_agent
 
 
 def build_search_url(keyword):
@@ -14,6 +14,7 @@ def build_search_url(keyword):
         "keywords": keyword,
         "location": LOCATION,
         "f_TPR": TIME_FILTER,
+        "f_E": ",".join(EXPERIENCE_LEVELS),
     }
     return f"{LINKEDIN_BASE_URL}?{urllib.parse.urlencode(params)}"
 

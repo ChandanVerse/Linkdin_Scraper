@@ -26,6 +26,11 @@ LINKEDIN_BASE_URL = "https://www.linkedin.com/jobs/search/"
 # In test mode (TEST_MODE=1 env var), use r86400 (last 24 hours) to find jobs
 TIME_FILTER = "r86400" if os.environ.get("TEST_MODE") else "r120"
 
+# LinkedIn experience level filter (f_E parameter)
+# 1 = Internship, 2 = Entry level, 3 = Associate
+# 4 = Mid-Senior level, 5 = Director, 6 = Executive
+EXPERIENCE_LEVELS = ["1", "2"]  # Internship + Entry level (fresher roles)
+
 # Rotating User-Agent headers to avoid blocks
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
