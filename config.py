@@ -4,16 +4,20 @@ import random
 # Discord webhook URL from environment variable (set as GitHub Secret)
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
-# Search keywords for LinkedIn job search
+# Search keywords for LinkedIn job search (fresher/entry-level roles)
 SEARCH_KEYWORDS = [
-    "Python Developer",
-    "Data Scientist",
-    "AI/ML Engineer",
-    "ML Engineer",
+    "Junior Python Developer",
+    "Python Developer Fresher",
+    "Junior Data Scientist",
+    "Entry Level Data Scientist",
+    "AI/ML Engineer Intern",
+    "Junior ML Engineer",
     "AI Intern",
     "Data Science Intern",
     "ML Intern",
     "ML Engineer Intern",
+    "Junior Data Engineer",
+    "Entry Level AI Engineer",
 ]
 
 # Location for job search
@@ -28,7 +32,8 @@ TIME_FILTER = "r300"
 # LinkedIn experience level filter (f_E parameter)
 # 1 = Internship, 2 = Entry level, 3 = Associate
 # 4 = Mid-Senior level, 5 = Director, 6 = Executive
-EXPERIENCE_LEVELS = ["1", "2"]  # Internship + Entry level (fresher roles)
+# Note: f_E may not work on public (non-logged-in) pages, but we include it anyway
+EXPERIENCE_LEVELS = ["1", "2"]
 
 # Rotating User-Agent headers to avoid blocks
 USER_AGENTS = [

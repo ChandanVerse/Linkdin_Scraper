@@ -7,6 +7,13 @@ from bs4 import BeautifulSoup
 
 from config import EXPERIENCE_LEVELS, LINKEDIN_BASE_URL, LOCATION, TIME_FILTER, get_random_user_agent
 
+# Skip jobs with these words in the title (experienced roles)
+SENIOR_KEYWORDS = [
+    "senior", "sr.", "sr ", "lead", "principal", "staff", "manager",
+    "director", "head of", "vp ", "vice president", "architect",
+    "10+", "8+", "7+", "6+", "5+",
+]
+
 
 def build_search_url(keyword):
     """Build LinkedIn public job search URL for a keyword."""
@@ -70,6 +77,11 @@ def scrape_jobs(keyword):
             # Extract location
             location_tag = card.find("span", class_="job-search-card__location")
             location = location_tag.get_text(strip=True) if location_tag else "Unknown Location"
+
+            # Skip senior/experienced roles based on title
+            title_lower = title.lower()
+            if any(kw in title_lower for kw in SENIOR_KEYWORDS):
+                continue
 
             # Clean job URL (remove tracking params)
             clean_url = job_url.split("?")[0] if "?" in job_url else job_url
