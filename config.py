@@ -22,9 +22,8 @@ LOCATION = "Bengaluru, Karnataka, India"
 # LinkedIn public job search base URL
 LINKEDIN_BASE_URL = "https://www.linkedin.com/jobs/search/"
 
-# f_TPR=r120 means jobs posted in last 2 minutes (buffer for cron drift on 1-min schedule)
-# In test mode (TEST_MODE=1 env var), use r86400 (last 24 hours) to find jobs
-TIME_FILTER = "r86400" if os.environ.get("TEST_MODE") else "r120"
+# f_TPR filter: r14400 = jobs posted in last 4 hours
+TIME_FILTER = "r14400"
 
 # LinkedIn experience level filter (f_E parameter)
 # 1 = Internship, 2 = Entry level, 3 = Associate

@@ -1,7 +1,5 @@
 import sys
 
-import os
-
 from config import DISCORD_WEBHOOK_URL, SEARCH_KEYWORDS
 from notifier import notify_new_jobs
 from scraper import scrape_all_keywords
@@ -24,10 +22,8 @@ def main():
     print(f"Loaded {len(seen_jobs)} previously seen job IDs")
 
     # Scrape jobs for all keywords
-    # In test mode, only use first keyword to speed things up
-    keywords = SEARCH_KEYWORDS[:1] if os.environ.get("TEST_MODE") else SEARCH_KEYWORDS
     print("\nScraping LinkedIn for new jobs...")
-    all_jobs = scrape_all_keywords(keywords)
+    all_jobs = scrape_all_keywords(SEARCH_KEYWORDS)
     print(f"\nTotal jobs found across all keywords: {len(all_jobs)}")
 
     # Filter out duplicates (same job may appear under multiple keywords)
