@@ -31,6 +31,9 @@ TIME_FILTER = "r300"
 # How often to run locally (in seconds)
 RUN_INTERVAL = 300
 
+# Max age of job posting to notify (in hours)
+MAX_JOB_AGE_HOURS = 3
+
 # Experience level filter: 1 = Internship, 2 = Entry level
 EXPERIENCE_LEVELS = ["1", "2"]
 
@@ -42,6 +45,8 @@ BLACKLISTED_COMPANIES = [
     "webs it solution",
     "zenithbyte",
     "skillzenloop",
+    "Webs X UM",
+    "inficore soft",
 ]
 
 # Max seen job IDs to keep
@@ -49,3 +54,9 @@ MAX_SEEN_JOBS = 5000
 
 # Path to seen jobs file
 SEEN_JOBS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seen_jobs.json")
+
+# Enable/disable job sites
+ENABLE_LINKEDIN = True
+ENABLE_NAUKRI = True
+ENABLE_INDEED = True
+ENABLE_FOUNDIT = True

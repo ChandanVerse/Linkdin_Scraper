@@ -5,17 +5,28 @@ import requests
 
 from config import DISCORD_WEBHOOK_URL
 
+SOURCE_COLORS = {
+    "LinkedIn": 0x0A66C2,
+    "Naukri": 0x2D69F0,
+    "Indeed": 0x003A9B,
+    "Foundit": 0xFF6B35,
+}
+
 
 def send_discord_notification(job):
+    source = job.get("source", "Unknown")
+    color = SOURCE_COLORS.get(source, 0x808080)
+
     embed = {
         "title": job["title"],
         "url": job["url"],
-        "color": 0x0A66C2,
+        "color": color,
         "fields": [
             {"name": "Company", "value": job["company"], "inline": True},
             {"name": "Location", "value": job["location"], "inline": True},
+            {"name": "Source", "value": source, "inline": True},
             {"name": "Keyword", "value": job["keyword"], "inline": True},
-            {"name": "Apply", "value": f"[View on LinkedIn]({job['url']})"},
+            {"name": "Apply", "value": f"[View Job]({job['url']})"},
         ],
         "footer": {"text": f"Job ID: {job['job_id']}"},
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -37,7 +48,8 @@ def send_discord_notification(job):
 def notify_new_jobs(jobs):
     sent = 0
     for job in jobs:
-        print(f"  Notifying: {job['title']} at {job['company']}")
+        source = job.get("source", "")
+        print(f"  Notifying: {job['title']} at {job['company']} [{source}]")
         if send_discord_notification(job):
             sent += 1
         time.sleep(1)

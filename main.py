@@ -3,9 +3,17 @@ import sys
 import time
 from datetime import datetime
 
-from config import DISCORD_WEBHOOK_URL, RUN_INTERVAL, SEARCH_KEYWORDS
+from config import (
+    DISCORD_WEBHOOK_URL,
+    ENABLE_FOUNDIT,
+    ENABLE_INDEED,
+    ENABLE_LINKEDIN,
+    ENABLE_NAUKRI,
+    RUN_INTERVAL,
+    SEARCH_KEYWORDS,
+)
+from driver import close_driver
 from notifier import notify_new_jobs
-from scraper import close_driver, linkedin_login, scrape_all_keywords
 from tracker import filter_new_jobs, load_seen_jobs, mark_jobs_seen, save_seen_jobs
 
 
@@ -13,17 +21,37 @@ def run_once():
     """Run a single scrape cycle."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"\n{'=' * 50}")
-    print(f"[{now}] LinkedIn Job Scraper")
+    print(f"[{now}] Job Scraper")
     print("=" * 50)
 
     seen_jobs = load_seen_jobs()
     print(f"Loaded {len(seen_jobs)} previously seen job IDs")
 
-    print("\nScraping LinkedIn for new jobs...")
-    all_jobs = scrape_all_keywords(SEARCH_KEYWORDS)
-    print(f"\nTotal jobs found across all keywords: {len(all_jobs)}")
+    all_jobs = []
 
-    # Dedup across keywords
+    if ENABLE_LINKEDIN:
+        from linkedin_scraper import scrape_all_keywords as linkedin_scrape
+        print("\n[LinkedIn]")
+        all_jobs.extend(linkedin_scrape(SEARCH_KEYWORDS))
+
+    if ENABLE_NAUKRI:
+        from naukri_scraper import scrape_all_keywords as naukri_scrape
+        print("\n[Naukri]")
+        all_jobs.extend(naukri_scrape(SEARCH_KEYWORDS))
+
+    if ENABLE_INDEED:
+        from indeed_scraper import scrape_all_keywords as indeed_scrape
+        print("\n[Indeed]")
+        all_jobs.extend(indeed_scrape(SEARCH_KEYWORDS))
+
+    if ENABLE_FOUNDIT:
+        from foundit_scraper import scrape_all_keywords as foundit_scrape
+        print("\n[Foundit]")
+        all_jobs.extend(foundit_scrape(SEARCH_KEYWORDS))
+
+    print(f"\nTotal jobs found across all sources: {len(all_jobs)}")
+
+    # Dedup across keywords and sources
     unique_jobs = {}
     for job in all_jobs:
         if job["job_id"] not in unique_jobs:
@@ -53,24 +81,23 @@ def main():
         sys.exit(1)
 
     # LinkedIn login
-    li_email = os.environ.get("LINKEDIN_EMAIL", "")
-    li_password = os.environ.get("LINKEDIN_PASSWORD", "")
+    if ENABLE_LINKEDIN:
+        li_email = os.environ.get("LINKEDIN_EMAIL", "")
+        li_password = os.environ.get("LINKEDIN_PASSWORD", "")
 
-    if li_email and li_password:
-        print("Logging into LinkedIn...")
-        if not linkedin_login(li_email, li_password):
-            print("[WARN] Login failed. Continuing without login (filters may not work).")
-    else:
-        print("[INFO] No LinkedIn credentials set. Running without login.")
-        print("  Set LINKEDIN_EMAIL and LINKEDIN_PASSWORD env vars for full filter support.")
+        if li_email and li_password:
+            from linkedin_scraper import linkedin_login
+            print("Logging into LinkedIn...")
+            if not linkedin_login(li_email, li_password):
+                print("[WARN] Login failed. Continuing without login.")
+        else:
+            print("[INFO] No LinkedIn credentials set. Running without login.")
 
-    # If --once flag, run single cycle and exit
     if "--once" in sys.argv:
         run_once()
         close_driver()
         return
 
-    # Otherwise loop forever (for local use)
     print(f"\nStarting scraper loop (every {RUN_INTERVAL}s). Press Ctrl+C to stop.\n")
     try:
         while True:
