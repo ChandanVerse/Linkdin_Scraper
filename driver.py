@@ -60,6 +60,13 @@ def get_driver():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
+    # Memory-saving flags for EC2 / low-RAM servers
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-background-networking")
+    options.add_argument("--disable-default-apps")
+    options.add_argument("--disable-renderer-backgrounding")
+    options.add_argument("--disable-backgrounding-occluded-windows")
+    options.add_argument("--js-flags=--max-old-space-size=512")
 
     # Auto-detect Chrome version
     import subprocess
@@ -78,7 +85,7 @@ def get_driver():
         pass
 
     _driver = uc.Chrome(options=options, headless=False, version_main=chrome_ver)
-    _driver.set_page_load_timeout(30)
+    _driver.set_page_load_timeout(60)
     return _driver
 
 

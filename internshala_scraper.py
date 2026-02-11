@@ -85,7 +85,7 @@ def _parse_job_cards(soup, keyword):
     return jobs
 
 
-def scrape_all_keywords(keywords, batch_size=4):
+def scrape_all_keywords(keywords, batch_size=2):
     all_jobs = []
     driver = get_driver()
 

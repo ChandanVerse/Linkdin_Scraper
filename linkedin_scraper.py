@@ -28,7 +28,7 @@ def _load_cookies(driver):
         with open(COOKIES_FILE, "r") as f:
             cookies = json.load(f)
         driver.get("https://www.linkedin.com")
-        time.sleep(2)
+        time.sleep(3)
         for cookie in cookies:
             cookie.pop("sameSite", None)
             cookie.pop("expiry", None)
@@ -37,13 +37,14 @@ def _load_cookies(driver):
             except Exception:
                 pass
         driver.get("https://www.linkedin.com/feed/")
-        time.sleep(3)
+        time.sleep(5)
         if "feed" in driver.current_url or "mynetwork" in driver.current_url:
             print("  Restored session from saved cookies!")
             return True
         print("  Saved cookies expired, logging in fresh...")
         return False
-    except Exception:
+    except Exception as e:
+        print(f"  [WARN] Cookie load failed: {e}")
         return False
 
 
@@ -245,7 +246,7 @@ def _scrape_recommended():
     return jobs
 
 
-def scrape_all_keywords(keywords, batch_size=4):
+def scrape_all_keywords(keywords, batch_size=2):
     all_jobs = []
     driver = get_driver()
 
@@ -262,6 +263,7 @@ def scrape_all_keywords(keywords, batch_size=4):
                 driver.switch_to.new_window('tab')
                 driver.get(url)
             tabs.append(keyword)
+            time.sleep(1)
 
         time.sleep(2)
 
