@@ -114,15 +114,92 @@ def close_driver():
 
 
 def parse_age_hours(text):
-    """Parse job posting age and return hours. Handles multiple formats."""
+    """Parse job posting age and return hours. Handles multiple formats.
+
+    Supports:
+      - Immediate: "just now", "right now", "now", "today", "posted today",
+        "moments ago", "recently", "few seconds ago", "new"
+      - Articles: "a minute ago", "an hour ago", "a day ago", "a month ago"
+      - Qualifiers: "about 2 hours ago", "over 3 days ago", "almost a week ago",
+        "less than an hour ago"
+      - Prefixed: "Posted 3 days ago", "Active 2 days ago", "Updated 1 hour ago"
+      - "Few" expressions: "few minutes ago", "few hours ago", "few days ago"
+      - Long form: "7 minutes ago", "2 hours ago", "3 days ago", "1 year ago"
+      - Plurals with +: "30+ days ago"
+      - Short form: "1d", "2w", "3mo", "5h", "30m", "10s", "1y", "2yr", "2yrs"
+      - Short form with ago: "2d ago", "3h ago", "1mo ago"
+      - Time without "ago": "2 days", "1 month" (some sites omit "ago")
+      - Special: "yesterday", "last week", "last month", "this week"
+      - Absolute dates: "Jan 15, 2025", "15 Jan 2025", "2025-01-15", "01/15/2025"
+    """
+    from datetime import datetime, timedelta
+
     text = text.lower().strip()
 
-    # "just now", "now", "today", "few seconds ago"
-    if any(kw in text for kw in ("just now", "right now", "today", "few seconds")):
+    # ── Immediate / zero-age keywords ──────────────────────────────────
+    immediate_keywords = (
+        "just now", "right now", "moments ago", "moment ago",
+        "recently", "few seconds", "a few seconds", "posted today",
+        "today", "now", "just posted", "actively hiring",
+        "actively recruiting",
+    )
+    if any(kw in text for kw in immediate_keywords):
         return 0
 
-    # Long format: "7 minutes ago", "2 hours ago", "3 days ago"
-    m = re.search(r"(\d+)\s*(second|minute|hour|day|week|month)s?\s*ago", text)
+    # Also match bare "new" but avoid false-positive on e.g. "New Delhi"
+    if re.search(r"\bnew\b", text) and "delhi" not in text:
+        return 0
+
+    # ── "Few <unit> ago" → small value ─────────────────────────────────
+    m = re.search(
+        r"(?:a\s+)?few\s+(second|minute|hour|day|week|month|year)s?\s*(?:ago)?",
+        text,
+    )
+    if m:
+        unit = m.group(1)
+        if unit in ("second", "minute"):
+            return 0
+        elif unit == "hour":
+            return 2                # "few hours" ≈ 2-3
+        elif unit == "day":
+            return 72               # "few days" ≈ 3
+        elif unit == "week":
+            return 504              # "few weeks" ≈ 3
+        elif unit == "month":
+            return 2160             # "few months" ≈ 3
+        elif unit == "year":
+            return 26280            # "few years" ≈ 3
+
+    # ── Article form: "a minute ago", "an hour ago", "a day ago" ───────
+    m = re.search(
+        r"\b(?:about|over|almost|less\s+than|more\s+than)?\s*"
+        r"an?\s+(second|minute|hour|day|week|month|year)\s*(?:ago)?",
+        text,
+    )
+    if m:
+        unit = m.group(1)
+        if unit in ("second", "minute"):
+            return 0
+        elif unit == "hour":
+            return 1
+        elif unit == "day":
+            return 24
+        elif unit == "week":
+            return 168
+        elif unit == "month":
+            return 720
+        elif unit == "year":
+            return 8760
+
+    # ── Long format: "7 minutes ago", "2 hours ago", "30+ days ago" ────
+    # Handles optional qualifiers ("about", "over", "almost", etc.),
+    # optional plus sign after number, optional "ago" suffix, and
+    # optional prefixes like "Posted", "Active", "Updated".
+    m = re.search(
+        r"(\d+)\+?\s*(second|minute|hour|day|week|month|year)s?"
+        r"(?:\s*(?:ago|old|back))?",
+        text,
+    )
     if m:
         num = int(m.group(1))
         unit = m.group(2)
@@ -136,15 +213,18 @@ def parse_age_hours(text):
             return num * 168
         elif unit == "month":
             return num * 720
+        elif unit == "year":
+            return num * 8760
 
-    # Short format: "1d", "2w", "3mo", "5h", "30m", "10s"
-    m = re.search(r"(\d+)\s*(s|m|h|d|w|mo)\b", text)
+    # ── Short format: "1d", "2w", "3mo", "5h", "30m", "10s", "1y" ─────
+    # Also handles "2d ago", "1yr", "2yrs", "1yr ago"
+    m = re.search(r"(\d+)\+?\s*(sec|min|mo|yr|yrs|[smhdwy])\w*(?:\s*ago)?", text)
     if m:
         num = int(m.group(1))
         unit = m.group(2)
-        if unit == "s":
+        if unit in ("s", "sec"):
             return 0
-        elif unit == "m":
+        elif unit in ("m", "min"):
             return 0
         elif unit == "h":
             return num
@@ -152,12 +232,51 @@ def parse_age_hours(text):
             return num * 24
         elif unit == "w":
             return num * 168
-        elif unit == "mo":
+        elif unit in ("mo",):
             return num * 720
+        elif unit in ("y", "yr", "yrs"):
+            return num * 8760
 
-    # "yesterday"
+    # ── Special keywords ───────────────────────────────────────────────
     if "yesterday" in text:
         return 24
+    if "last week" in text or "this week" in text:
+        return 168
+    if "last month" in text or "this month" in text:
+        return 720
+    if "last year" in text:
+        return 8760
+
+    # ── Absolute date: "Jan 15, 2025" / "15 Jan 2025" ─────────────────
+    date_formats = [
+        r"%b %d, %Y",     # Jan 15, 2025
+        r"%b %d %Y",      # Jan 15 2025
+        r"%d %b %Y",      # 15 Jan 2025
+        r"%d %b, %Y",     # 15 Jan, 2025
+        r"%Y-%m-%d",      # 2025-01-15
+        r"%m/%d/%Y",      # 01/15/2025
+        r"%d/%m/%Y",      # 15/01/2025
+    ]
+    for fmt in date_formats:
+        try:
+            parsed = datetime.strptime(text.strip(), fmt)
+            delta = datetime.now() - parsed
+            return max(0, int(delta.total_seconds() / 3600))
+        except ValueError:
+            continue
+
+    # ── Absolute date without year: "Jan 15" / "15 Jan" ───────────────
+    short_date_formats = [r"%b %d", r"%d %b"]
+    for fmt in short_date_formats:
+        try:
+            parsed = datetime.strptime(text.strip(), fmt)
+            parsed = parsed.replace(year=datetime.now().year)
+            if parsed > datetime.now():
+                parsed = parsed.replace(year=datetime.now().year - 1)
+            delta = datetime.now() - parsed
+            return max(0, int(delta.total_seconds() / 3600))
+        except ValueError:
+            continue
 
     return None
 
