@@ -23,15 +23,15 @@ SEARCH_KEYWORDS = [
     "DevOps",
 ]
 
-# Relevant terms for title matching — jobs must contain at least one of these
+# Relevant domain terms — job title must contain at least one of these
+# NOTE: broad words like "intern", "engineer", "analyst", "developer" are excluded
+# because they match irrelevant roles (Recruiting Intern, Business Dev Intern, etc.)
+# Domain-specific terms ensure only tech/data/AI jobs pass through.
 RELEVANT_TITLE_TERMS = [
     "data", "python", "ml", "ai", "machine learning", "artificial intelligence",
-    "deep learning", "software", "developer", "engineer", "scientist",
-    "devops", "mlops", "backend", "frontend", "full stack", "fullstack",
-    "cloud", "intern", "trainee", "analyst", "computer vision", "nlp",
-    "generative ai", "gen ai", "genai", "llm", "automation", "testing",
-    "qa", "quality", "sde", "swe", "programming", "coding", "web development",
-    "app development", "mobile app", "research",
+    "deep learning", "software", "devops", "mlops", "backend", "frontend",
+    "full stack", "fullstack", "cloud", "computer vision", "nlp",
+    "generative ai", "gen ai", "genai", "llm", "sde", "swe",
 ]
 
 # Location for job search
