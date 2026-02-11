@@ -114,22 +114,51 @@ def close_driver():
 
 
 def parse_age_hours(text):
-    """Parse '7 minutes ago', '2 hours ago', '3 days ago' etc. and return age in hours."""
-    m = re.search(r"(\d+)\s*(second|minute|hour|day|week|month)s?\s*ago", text)
-    if not m:
-        return None
-    num = int(m.group(1))
-    unit = m.group(2)
-    if unit in ("second", "minute"):
+    """Parse job posting age and return hours. Handles multiple formats."""
+    text = text.lower().strip()
+
+    # "just now", "now", "today", "few seconds ago"
+    if any(kw in text for kw in ("just now", "right now", "today", "few seconds")):
         return 0
-    elif unit == "hour":
-        return num
-    elif unit == "day":
-        return num * 24
-    elif unit == "week":
-        return num * 168
-    elif unit == "month":
-        return num * 720
+
+    # Long format: "7 minutes ago", "2 hours ago", "3 days ago"
+    m = re.search(r"(\d+)\s*(second|minute|hour|day|week|month)s?\s*ago", text)
+    if m:
+        num = int(m.group(1))
+        unit = m.group(2)
+        if unit in ("second", "minute"):
+            return 0
+        elif unit == "hour":
+            return num
+        elif unit == "day":
+            return num * 24
+        elif unit == "week":
+            return num * 168
+        elif unit == "month":
+            return num * 720
+
+    # Short format: "1d", "2w", "3mo", "5h", "30m", "10s"
+    m = re.search(r"(\d+)\s*(s|m|h|d|w|mo)\b", text)
+    if m:
+        num = int(m.group(1))
+        unit = m.group(2)
+        if unit == "s":
+            return 0
+        elif unit == "m":
+            return 0
+        elif unit == "h":
+            return num
+        elif unit == "d":
+            return num * 24
+        elif unit == "w":
+            return num * 168
+        elif unit == "mo":
+            return num * 720
+
+    # "yesterday"
+    if "yesterday" in text:
+        return 24
+
     return None
 
 
@@ -151,4 +180,6 @@ def passes_filters(title, company, card_text=None, location=None):
         age = parse_age_hours(card_text.lower())
         if age is not None and age > MAX_JOB_AGE_HOURS:
             return False, f"{title} (posted {age}h+ ago)"
+        if age is None:
+            print(f"    [WARN] Unknown posting age: {title}")
     return True, None

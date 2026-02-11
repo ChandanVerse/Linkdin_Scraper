@@ -57,9 +57,6 @@ def _parse_job_cards(soup, keyword):
             # Posted time
             time_el = card.select_one(".status-success span, .status span, .posting-time")
             card_text = time_el.get_text(strip=True) if time_el else ""
-            # Internshala uses "X days ago", "Today", "Just now", etc.
-            if card_text.lower() in ("today", "just now"):
-                card_text = "0 hours ago"
 
             # Filters
             passes, reason = passes_filters(title, company, card_text, location)
