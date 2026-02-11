@@ -4,7 +4,7 @@ import re
 
 import undetected_chromedriver as uc
 
-from config import BLACKLISTED_COMPANIES, MAX_JOB_AGE_HOURS
+from config import BLACKLISTED_COMPANIES, MAX_JOB_AGE_HOURS, RELEVANT_TITLE_TERMS
 
 _driver = None
 _display = None
@@ -42,7 +42,16 @@ def _start_xvfb():
 def get_driver():
     global _driver
     if _driver is not None:
-        return _driver
+        try:
+            _driver.title  # verify session is still alive
+            return _driver
+        except Exception:
+            print("  [WARN] Browser session died, restarting...")
+            try:
+                _driver.quit()
+            except Exception:
+                pass
+            _driver = None
 
     _start_xvfb()
 
@@ -52,7 +61,24 @@ def get_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
 
-    _driver = uc.Chrome(options=options, headless=False)
+    # Auto-detect Chrome version
+    import subprocess
+    chrome_ver = None
+    try:
+        if platform.system() == "Windows":
+            out = subprocess.check_output(
+                r'reg query "HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon" /v version',
+                shell=True, text=True
+            )
+            chrome_ver = int(out.strip().split()[-1].split(".")[0])
+        else:
+            out = subprocess.check_output(["google-chrome", "--version"], text=True)
+            chrome_ver = int(out.strip().split()[-1].split(".")[0])
+    except Exception:
+        pass
+
+    _driver = uc.Chrome(options=options, headless=False, version_main=chrome_ver)
+    _driver.set_page_load_timeout(30)
     return _driver
 
 
@@ -101,12 +127,20 @@ def parse_age_hours(text):
     return None
 
 
-def passes_filters(title, company, card_text=None):
+VALID_LOCATIONS = ["bangalore", "bengaluru"]
+
+
+def passes_filters(title, company, card_text=None, location=None):
     """Return (passes, skip_reason) tuple."""
-    if any(kw in title.lower() for kw in EXCLUDE_TITLE_KEYWORDS):
+    title_lower = title.lower()
+    if any(kw in title_lower for kw in EXCLUDE_TITLE_KEYWORDS):
         return False, f"{title}"
+    if not any(term in title_lower for term in RELEVANT_TITLE_TERMS):
+        return False, f"{title} (irrelevant)"
     if any(bl in company.lower() for bl in BLACKLISTED_COMPANIES):
         return False, f"{company} (blacklisted)"
+    if location and not any(loc in location.lower() for loc in VALID_LOCATIONS):
+        return False, f"{title} (location: {location})"
     if card_text:
         age = parse_age_hours(card_text.lower())
         if age is not None and age > MAX_JOB_AGE_HOURS:

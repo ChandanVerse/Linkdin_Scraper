@@ -11,24 +11,6 @@ def _build_search_url(keyword):
     return f"https://in.indeed.com/jobs?q={q}&l=Bengaluru%2C+Karnataka&fromage=1"
 
 
-def _scrape_jobs(keyword):
-    driver = get_driver()
-    url = _build_search_url(keyword)
-
-    try:
-        driver.get(url)
-        time.sleep(4)
-
-        for _ in range(3):
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-
-        soup = BeautifulSoup(driver.page_source, "lxml")
-        return _parse_job_cards(soup, keyword)
-    except Exception as e:
-        print(f"  [ERROR] Indeed failed for '{keyword}': {e}")
-        return []
-
 
 def _parse_job_cards(soup, keyword):
     jobs = []
@@ -67,7 +49,7 @@ def _parse_job_cards(soup, keyword):
 
             # Filters
             card_text = card.get_text(" ", strip=True)
-            passes, reason = passes_filters(title, company, card_text)
+            passes, reason = passes_filters(title, company, card_text, location)
             if not passes:
                 print(f"    [SKIP] {reason}")
                 continue
@@ -87,12 +69,40 @@ def _parse_job_cards(soup, keyword):
     return jobs
 
 
-def scrape_all_keywords(keywords):
+def scrape_all_keywords(keywords, batch_size=4):
     all_jobs = []
-    for keyword in keywords:
-        print(f"  Scraping: {keyword}")
-        jobs = _scrape_jobs(keyword)
-        print(f"    Found {len(jobs)} job(s)")
-        all_jobs.extend(jobs)
+    driver = get_driver()
+
+    for i in range(0, len(keywords), batch_size):
+        batch = keywords[i:i + batch_size]
+
+        for j, keyword in enumerate(batch):
+            url = _build_search_url(keyword)
+            if j == 0:
+                driver.get(url)
+            else:
+                driver.switch_to.new_window('tab')
+                driver.get(url)
+
         time.sleep(2)
+
+        for j, keyword in enumerate(batch):
+            try:
+                driver.switch_to.window(driver.window_handles[j])
+                for _ in range(3):
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    time.sleep(0.5)
+
+                soup = BeautifulSoup(driver.page_source, "lxml")
+                jobs = _parse_job_cards(soup, keyword)
+                print(f"  {keyword}: {len(jobs)} job(s)")
+                all_jobs.extend(jobs)
+            except Exception as e:
+                print(f"  [ERROR] '{keyword}': {e}")
+
+        while len(driver.window_handles) > 1:
+            driver.switch_to.window(driver.window_handles[-1])
+            driver.close()
+        driver.switch_to.window(driver.window_handles[0])
+
     return all_jobs

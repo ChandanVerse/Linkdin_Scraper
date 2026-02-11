@@ -7,14 +7,15 @@ from config import (
     DISCORD_WEBHOOK_URL,
     ENABLE_FOUNDIT,
     ENABLE_INDEED,
+    ENABLE_INTERNSHALA,
     ENABLE_LINKEDIN,
     ENABLE_NAUKRI,
     RUN_INTERVAL,
     SEARCH_KEYWORDS,
 )
-from driver import close_driver
+from driver import close_driver, reset_driver
 from notifier import notify_new_jobs
-from tracker import filter_new_jobs, load_seen_jobs, mark_jobs_seen, save_seen_jobs
+from tracker import filter_new_jobs, load_seen_jobs, mark_jobs_seen
 
 
 def run_once():
@@ -29,25 +30,31 @@ def run_once():
 
     all_jobs = []
 
+    scrapers = []
     if ENABLE_LINKEDIN:
         from linkedin_scraper import scrape_all_keywords as linkedin_scrape
-        print("\n[LinkedIn]")
-        all_jobs.extend(linkedin_scrape(SEARCH_KEYWORDS))
-
+        scrapers.append(("LinkedIn", linkedin_scrape))
     if ENABLE_NAUKRI:
         from naukri_scraper import scrape_all_keywords as naukri_scrape
-        print("\n[Naukri]")
-        all_jobs.extend(naukri_scrape(SEARCH_KEYWORDS))
-
+        scrapers.append(("Naukri", naukri_scrape))
     if ENABLE_INDEED:
         from indeed_scraper import scrape_all_keywords as indeed_scrape
-        print("\n[Indeed]")
-        all_jobs.extend(indeed_scrape(SEARCH_KEYWORDS))
-
+        scrapers.append(("Indeed", indeed_scrape))
     if ENABLE_FOUNDIT:
         from foundit_scraper import scrape_all_keywords as foundit_scrape
-        print("\n[Foundit]")
-        all_jobs.extend(foundit_scrape(SEARCH_KEYWORDS))
+        scrapers.append(("Foundit", foundit_scrape))
+    if ENABLE_INTERNSHALA:
+        from internshala_scraper import scrape_all_keywords as internshala_scrape
+        scrapers.append(("Internshala", internshala_scrape))
+
+    for name, scrape_fn in scrapers:
+        try:
+            print(f"\n[{name}]")
+            all_jobs.extend(scrape_fn(SEARCH_KEYWORDS))
+        except Exception as e:
+            print(f"  [ERROR] {name} failed: {e}")
+            print("  Resetting browser and continuing...")
+            reset_driver()
 
     print(f"\nTotal jobs found across all sources: {len(all_jobs)}")
 
@@ -68,8 +75,7 @@ def run_once():
         print(f"Successfully sent {sent}/{len(new_jobs)} notifications")
 
         seen_jobs = mark_jobs_seen(new_jobs, seen_jobs)
-        save_seen_jobs(seen_jobs)
-        print(f"Updated seen jobs file ({len(seen_jobs)} total)")
+        print(f"Updated DynamoDB ({len(seen_jobs)} total seen)")
     else:
         print("No new jobs to notify about.")
 
@@ -109,6 +115,7 @@ def main():
                 raise
             except Exception as e:
                 print(f"\n[ERROR] {e}")
+                reset_driver()
                 print(f"Retrying in {RUN_INTERVAL} seconds...")
                 time.sleep(RUN_INTERVAL)
     except KeyboardInterrupt:

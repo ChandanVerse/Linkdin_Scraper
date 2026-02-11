@@ -10,7 +10,7 @@ sudo apt update && sudo apt upgrade -y
 # Install Python, pip, venv
 sudo apt install -y python3 python3-pip python3-venv
 
-# Install Xvfb and dependencies
+# Install Xvfb
 sudo apt install -y xvfb
 
 # Install Google Chrome
@@ -34,15 +34,23 @@ source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
+# Create .env from template if it doesn't exist
+if [ ! -f "$REPO_DIR/.env" ]; then
+    cat > "$REPO_DIR/.env" <<'ENVEOF'
+DISCORD_WEBHOOK_URL=
+LINKEDIN_EMAIL=
+LINKEDIN_PASSWORD=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=ap-south-1
+ENVEOF
+    echo "Created .env template at $REPO_DIR/.env"
+fi
+
 echo ""
 echo "=== Setup complete! ==="
 echo ""
 echo "Next steps:"
-echo "  1. Create .env file:  nano $REPO_DIR/.env"
-echo "     Add: DISCORD_WEBHOOK_URL=your_url"
-echo "     Add: LINKEDIN_EMAIL=your_email"
-echo "     Add: LINKEDIN_PASSWORD=your_password"
-echo ""
-echo "  2. Test run:  cd $REPO_DIR && source venv/bin/activate && python3 main.py --once"
-echo ""
+echo "  1. Edit .env:  nano $REPO_DIR/.env"
+echo "  2. Test run:    cd $REPO_DIR && source venv/bin/activate && python3 -u main.py --once"
 echo "  3. Install service:  sudo bash $REPO_DIR/install_service.sh"

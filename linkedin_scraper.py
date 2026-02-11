@@ -106,24 +106,6 @@ def _build_search_url(keyword):
     return f"https://www.linkedin.com/jobs/search/?{'&'.join(params)}"
 
 
-def _scrape_jobs(keyword):
-    driver = get_driver()
-    url = _build_search_url(keyword)
-
-    try:
-        driver.get(url)
-        time.sleep(3)
-
-        for _ in range(3):
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-
-        soup = BeautifulSoup(driver.page_source, "lxml")
-        return _parse_job_cards(soup, keyword)
-    except Exception as e:
-        print(f"  [ERROR] Failed to scrape '{keyword}': {e}")
-        return []
-
 
 def _parse_job_cards(soup, keyword):
     jobs = []
@@ -182,7 +164,7 @@ def _parse_job_cards(soup, keyword):
                 ], "Unknown Location")
 
             card_text = card.get_text(" ", strip=True)
-            passes, reason = passes_filters(title, company, card_text)
+            passes, reason = passes_filters(title, company, card_text, location)
             if not passes:
                 print(f"    [SKIP] {reason}")
                 continue
@@ -234,12 +216,76 @@ def _extract_job_id(url):
     return None
 
 
-def scrape_all_keywords(keywords):
+def _scrape_recommended():
+    """Scrape LinkedIn's recommended jobs section (requires login)."""
+    driver = get_driver()
+    jobs = []
+
+    RECOMMENDED_URLS = [
+        "https://www.linkedin.com/jobs/collections/recommended/",
+        "https://www.linkedin.com/jobs/collections/top-applicant/",
+    ]
+
+    for url in RECOMMENDED_URLS:
+        try:
+            driver.get(url)
+            time.sleep(3)
+
+            for _ in range(5):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+
+            soup = BeautifulSoup(driver.page_source, "lxml")
+            page_jobs = _parse_job_cards(soup, "Recommended")
+            print(f"  {url.split('/')[-2]}: {len(page_jobs)} job(s)")
+            jobs.extend(page_jobs)
+        except Exception as e:
+            print(f"  [ERROR] Recommended jobs: {e}")
+
+    return jobs
+
+
+def scrape_all_keywords(keywords, batch_size=4):
     all_jobs = []
-    for keyword in keywords:
-        print(f"  Scraping: {keyword}")
-        jobs = _scrape_jobs(keyword)
-        print(f"    Found {len(jobs)} job(s)")
-        all_jobs.extend(jobs)
+    driver = get_driver()
+
+    # Scrape keyword searches
+    for i in range(0, len(keywords), batch_size):
+        batch = keywords[i:i + batch_size]
+        tabs = []
+
+        for j, keyword in enumerate(batch):
+            url = _build_search_url(keyword)
+            if j == 0:
+                driver.get(url)
+            else:
+                driver.switch_to.new_window('tab')
+                driver.get(url)
+            tabs.append(keyword)
+
         time.sleep(2)
+
+        for j, keyword in enumerate(batch):
+            try:
+                driver.switch_to.window(driver.window_handles[j])
+                for _ in range(3):
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    time.sleep(0.5)
+
+                soup = BeautifulSoup(driver.page_source, "lxml")
+                jobs = _parse_job_cards(soup, keyword)
+                print(f"  {keyword}: {len(jobs)} job(s)")
+                all_jobs.extend(jobs)
+            except Exception as e:
+                print(f"  [ERROR] '{keyword}': {e}")
+
+        while len(driver.window_handles) > 1:
+            driver.switch_to.window(driver.window_handles[-1])
+            driver.close()
+        driver.switch_to.window(driver.window_handles[0])
+
+    # Scrape recommended/top-applicant collections
+    print("  --- Collections ---")
+    all_jobs.extend(_scrape_recommended())
+
     return all_jobs

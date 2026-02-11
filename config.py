@@ -13,13 +13,25 @@ SEARCH_KEYWORDS = [
     "Python Developer",
     "ML Engineer",
     "AI Engineer",
-    "Software Engineer",
     "Junior Python Developer",
     "Junior Data Scientist",
     "AI Intern",
     "Data Science Intern",
     "ML Intern",
     "ML Engineer Intern",
+    "MLOps",
+    "DevOps",
+]
+
+# Relevant terms for title matching — jobs must contain at least one of these
+RELEVANT_TITLE_TERMS = [
+    "data", "python", "ml", "ai", "machine learning", "artificial intelligence",
+    "deep learning", "software", "developer", "engineer", "scientist",
+    "devops", "mlops", "backend", "frontend", "full stack", "fullstack",
+    "cloud", "intern", "trainee", "analyst", "computer vision", "nlp",
+    "generative ai", "gen ai", "genai", "llm", "automation", "testing",
+    "qa", "quality", "sde", "swe", "programming", "coding", "web development",
+    "app development", "mobile app", "research",
 ]
 
 # Location for job search
@@ -47,16 +59,16 @@ BLACKLISTED_COMPANIES = [
     "skillzenloop",
     "Webs X UM",
     "inficore soft",
+    "VEDIST SYSTEMS PRIVATE LIMITED",
 ]
-
-# Max seen job IDs to keep
-MAX_SEEN_JOBS = 5000
-
-# Path to seen jobs file
-SEEN_JOBS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seen_jobs.json")
 
 # Enable/disable job sites
 ENABLE_LINKEDIN = True
 ENABLE_NAUKRI = True
 ENABLE_INDEED = True
 ENABLE_FOUNDIT = True
+ENABLE_INTERNSHALA = True
+
+# AWS DynamoDB settings (set AWS_ACCESS_KEY_ID & AWS_SECRET_ACCESS_KEY in .env)
+AWS_REGION = os.environ.get("AWS_REGION", "ap-south-1")
+DYNAMODB_TABLE = os.environ.get("DYNAMODB_TABLE", "job_scraper_seen_jobs")

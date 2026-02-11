@@ -10,6 +10,7 @@ SOURCE_COLORS = {
     "Naukri": 0x2D69F0,
     "Indeed": 0x003A9B,
     "Foundit": 0xFF6B35,
+    "Internshala": 0x00A5EC,
 }
 
 

@@ -1,3 +1,4 @@
+import re
 import time
 
 from bs4 import BeautifulSoup
@@ -7,40 +8,58 @@ from driver import get_driver, passes_filters
 
 def _build_search_url(keyword):
     slug = keyword.lower().replace(" ", "-")
-    return f"https://www.naukri.com/{slug}-jobs-in-bengaluru?experience=0&jobAge=1"
-
+    return f"https://internshala.com/internships/{slug}-internship-in-bangalore/"
 
 
 def _parse_job_cards(soup, keyword):
     jobs = []
 
-    # Naukri: <div class="srp-jobtuple-wrapper" data-job-id="...">
-    job_cards = soup.find_all("div", class_="srp-jobtuple-wrapper")
+    job_cards = soup.select(".individual_internship")
     if not job_cards:
-        job_cards = soup.find_all(attrs={"data-job-id": True})
+        job_cards = soup.select(".internship_meta")
+    if not job_cards:
+        job_cards = soup.select("[data-internship_id]")
+
+    if not job_cards:
+        return jobs
 
     for card in job_cards:
         try:
-            job_id = card.get("data-job-id")
+            # Job ID from data attribute or link
+            job_id = card.get("data-internship_id") or card.get("internshipid")
+            if not job_id:
+                link = card.find("a", href=re.compile(r"/internship/detail/"))
+                if link:
+                    m = re.search(r"(\d+)/?$", link.get("href", ""))
+                    job_id = m.group(1) if m else None
             if not job_id:
                 continue
 
-            # Title: <a class="title">
-            title_el = card.find("a", class_="title")
+            # Title
+            title_el = card.select_one(".profile a, h3.job-internship-name a, .heading_4_5 a")
+            if not title_el:
+                title_el = card.find("a", href=re.compile(r"/internship/detail/"))
             title = title_el.get_text(strip=True) if title_el else "Unknown Title"
             job_url = title_el.get("href", "") if title_el else ""
 
-            # Company: <a class="comp-name">
-            comp_el = card.find("a", class_="comp-name")
+            # Company
+            comp_el = card.select_one(".company_name a, .link_display_like_text, p.company-name")
+            if not comp_el:
+                comp_el = card.select_one(".company_name")
             company = comp_el.get_text(strip=True) if comp_el else "Unknown Company"
 
-            # Location: <span class="locWdth">
-            loc_el = card.find("span", class_="locWdth")
-            location = loc_el.get_text(strip=True) if loc_el else "Unknown Location"
+            # Location
+            loc_el = card.select_one("#location_names a, .locations a, .location_link")
+            if not loc_el:
+                loc_el = card.select_one("#location_names, .locations")
+            location = loc_el.get_text(strip=True) if loc_el else "Bangalore"
 
-            # Posted time: <span class="job-post-day">
-            time_el = card.find("span", class_="job-post-day")
+            # Posted time
+            time_el = card.select_one(".status-success span, .status span, .posting-time")
             card_text = time_el.get_text(strip=True) if time_el else ""
+            # Internshala uses "X days ago", "Today", "Just now", etc.
+            if card_text.lower() in ("today", "just now"):
+                card_text = "0 hours ago"
 
             # Filters
             passes, reason = passes_filters(title, company, card_text, location)
@@ -48,20 +67,20 @@ def _parse_job_cards(soup, keyword):
                 print(f"    [SKIP] {reason}")
                 continue
 
-            if not job_url.startswith("http"):
-                job_url = f"https://www.naukri.com{job_url}"
+            if job_url and not job_url.startswith("http"):
+                job_url = f"https://internshala.com{job_url}"
 
             jobs.append({
-                "job_id": f"nk_{job_id}",
+                "job_id": f"is_{job_id}",
                 "title": title,
                 "company": company,
                 "location": location,
                 "url": job_url,
                 "keyword": keyword,
-                "source": "Naukri",
+                "source": "Internshala",
             })
         except Exception as e:
-            print(f"  [WARN] Naukri parse error: {e}")
+            print(f"  [WARN] Internshala parse error: {e}")
 
     return jobs
 
