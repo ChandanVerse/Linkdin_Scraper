@@ -68,7 +68,3 @@ ENABLE_NAUKRI = True
 ENABLE_INDEED = True
 ENABLE_FOUNDIT = True
 ENABLE_INTERNSHALA = True
-
-# AWS DynamoDB settings (set AWS_ACCESS_KEY_ID & AWS_SECRET_ACCESS_KEY in .env)
-AWS_REGION = os.environ.get("AWS_REGION", "ap-south-1")
-DYNAMODB_TABLE = os.environ.get("DYNAMODB_TABLE", "job_scraper_seen_jobs")

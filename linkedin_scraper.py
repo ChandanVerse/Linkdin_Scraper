@@ -12,6 +12,7 @@ from config import EXPERIENCE_LEVELS, LOCATION, TIME_FILTER
 from driver import get_driver, passes_filters, reset_driver
 
 COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "linkedin_cookies.json")
+_logged_in = False
 
 
 def _is_logged_in(url):
@@ -60,49 +61,45 @@ def _load_cookies(driver):
 
 
 def linkedin_login(email, password):
+    global _logged_in
     driver = get_driver()
 
     if _load_cookies(driver):
+        _logged_in = True
         return True
 
-    driver.get("https://www.linkedin.com/login")
-    time.sleep(2)
-
+    print("  Attempting fresh login...")
     try:
+        driver.get("https://www.linkedin.com/login")
+        time.sleep(3)
+
         email_field = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "username"))
         )
         email_field.send_keys(email)
         driver.find_element(By.ID, "password").send_keys(password)
         driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
-        time.sleep(3)
+        time.sleep(5)
 
         if _is_logged_in(driver.current_url):
             print("  LinkedIn login successful!")
             _save_cookies(driver)
+            _logged_in = True
             return True
         elif "checkpoint" in driver.current_url or "challenge" in driver.current_url:
-            print("  [WARN] LinkedIn requires verification.")
-            print("  Complete the verification in the browser window...")
-            for i in range(24):
-                time.sleep(5)
-                try:
-                    if _is_logged_in(driver.current_url):
-                        print("  LinkedIn login successful!")
-                        _save_cookies(driver)
-                        return True
-                except Exception:
-                    print("  [ERROR] Browser closed during verification.")
-                    reset_driver()
-                    return False
-            print("  [WARN] Verification timed out after 120s.")
+            print("  [WARN] LinkedIn requires verification (can't complete on server).")
+            print("  Continuing with public pages only...")
+            _logged_in = False
             return False
         else:
-            print(f"  [ERROR] Login may have failed. URL: {driver.current_url}")
+            print(f"  [WARN] Login failed. URL: {driver.current_url}")
+            print("  Continuing with public pages only...")
+            _logged_in = False
             return False
     except Exception as e:
-        print(f"  [ERROR] Login failed: {e}")
-        reset_driver()
+        print(f"  [WARN] Login failed: {e}")
+        print("  Continuing with public pages only...")
+        _logged_in = False
         return False
 
 
@@ -296,8 +293,11 @@ def scrape_all_keywords(keywords, batch_size=2):
             driver.close()
         driver.switch_to.window(driver.window_handles[0])
 
-    # Scrape recommended/top-applicant collections
-    print("  --- Collections ---")
-    all_jobs.extend(_scrape_recommended())
+    # Scrape recommended/top-applicant collections (requires login)
+    if _logged_in:
+        print("  --- Collections ---")
+        all_jobs.extend(_scrape_recommended())
+    else:
+        print("  --- Skipping collections (not logged in) ---")
 
     return all_jobs

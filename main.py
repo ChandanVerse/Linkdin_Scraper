@@ -75,7 +75,7 @@ def run_once():
         print(f"Successfully sent {sent}/{len(new_jobs)} notifications")
 
         seen_jobs = mark_jobs_seen(new_jobs, seen_jobs)
-        print(f"Updated DynamoDB ({len(seen_jobs)} total seen)")
+        print(f"Updated seen_jobs.json ({len(seen_jobs)} total seen)")
     else:
         print("No new jobs to notify about.")
 
@@ -95,9 +95,9 @@ def main():
             from linkedin_scraper import linkedin_login
             print("Logging into LinkedIn...")
             if not linkedin_login(li_email, li_password):
-                print("[WARN] Login failed. Continuing without login.")
+                print("[WARN] Login failed. LinkedIn will use public pages only.")
         else:
-            print("[INFO] No LinkedIn credentials set. Running without login.")
+            print("[INFO] No LinkedIn credentials set. LinkedIn will use public pages only.")
 
     if "--once" in sys.argv:
         run_once()
