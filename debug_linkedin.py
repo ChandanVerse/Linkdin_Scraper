@@ -41,7 +41,8 @@ def main():
 
     # 4. Check if logged in
     print("\n[4] Login check...")
-    logged_in = "feed" in driver.current_url or "mynetwork" in driver.current_url
+    from linkedin_scraper import _is_logged_in
+    logged_in = _is_logged_in(driver.current_url)
     print(f"    Logged in: {logged_in}")
 
     if not logged_in:

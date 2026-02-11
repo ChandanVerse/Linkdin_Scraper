@@ -14,6 +14,17 @@ from driver import get_driver, passes_filters, reset_driver
 COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "linkedin_cookies.json")
 
 
+def _is_logged_in(url):
+    """Check if URL indicates a logged-in LinkedIn page (not a login redirect)."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+    # Must be on linkedin.com and NOT on a login/auth page
+    if "login" in path or "uas" in path or "checkpoint" in path or "challenge" in path:
+        return False
+    return path in ("/feed", "/mynetwork") or path.startswith("/jobs")
+
+
 def _save_cookies(driver):
     cookies = driver.get_cookies()
     with open(COOKIES_FILE, "w") as f:
@@ -38,10 +49,10 @@ def _load_cookies(driver):
                 pass
         driver.get("https://www.linkedin.com/feed/")
         time.sleep(5)
-        if "feed" in driver.current_url or "mynetwork" in driver.current_url:
+        if _is_logged_in(driver.current_url):
             print("  Restored session from saved cookies!")
             return True
-        print("  Saved cookies expired, logging in fresh...")
+        print(f"  Saved cookies expired (landed on: {driver.current_url})")
         return False
     except Exception as e:
         print(f"  [WARN] Cookie load failed: {e}")
@@ -66,7 +77,7 @@ def linkedin_login(email, password):
         driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
         time.sleep(3)
 
-        if "feed" in driver.current_url or "mynetwork" in driver.current_url:
+        if _is_logged_in(driver.current_url):
             print("  LinkedIn login successful!")
             _save_cookies(driver)
             return True
@@ -76,8 +87,7 @@ def linkedin_login(email, password):
             for i in range(24):
                 time.sleep(5)
                 try:
-                    url = driver.current_url
-                    if "feed" in url or "mynetwork" in url or "jobs" in url:
+                    if _is_logged_in(driver.current_url):
                         print("  LinkedIn login successful!")
                         _save_cookies(driver)
                         return True
