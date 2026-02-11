@@ -11,7 +11,6 @@ def _build_search_url(keyword):
     return f"https://in.indeed.com/jobs?q={q}&l=Bengaluru%2C+Karnataka&fromage=1"
 
 
-
 def _parse_job_cards(soup, keyword):
     jobs = []
 

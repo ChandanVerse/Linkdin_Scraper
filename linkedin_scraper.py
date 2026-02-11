@@ -9,7 +9,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 from config import EXPERIENCE_LEVELS, LOCATION, TIME_FILTER
-from driver import get_driver, passes_filters, reset_driver
+from driver import get_driver, passes_filters
 
 COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "linkedin_cookies.json")
 _logged_in = False
@@ -112,7 +112,6 @@ def _build_search_url(keyword):
     if EXPERIENCE_LEVELS:
         params.append(f"f_E={'%2C'.join(EXPERIENCE_LEVELS)}")
     return f"https://www.linkedin.com/jobs/search/?{'&'.join(params)}"
-
 
 
 def _parse_job_cards(soup, keyword):
@@ -257,10 +256,8 @@ def scrape_all_keywords(keywords, batch_size=2):
     all_jobs = []
     driver = get_driver()
 
-    # Scrape keyword searches
     for i in range(0, len(keywords), batch_size):
         batch = keywords[i:i + batch_size]
-        tabs = []
 
         for j, keyword in enumerate(batch):
             url = _build_search_url(keyword)
@@ -269,7 +266,6 @@ def scrape_all_keywords(keywords, batch_size=2):
             else:
                 driver.switch_to.new_window('tab')
                 driver.get(url)
-            tabs.append(keyword)
             time.sleep(1)
 
         time.sleep(2)

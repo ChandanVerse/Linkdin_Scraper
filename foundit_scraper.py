@@ -11,7 +11,6 @@ def _build_search_url(keyword):
     return f"https://www.foundit.in/srp/results?sort=1&limit=25&query={q}&locations=Bengaluru&experienceRanges=0~2&postAge=1"
 
 
-
 def _parse_job_cards(soup, keyword):
     jobs = []
 

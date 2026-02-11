@@ -1,6 +1,7 @@
 import os
 import platform
 import re
+import subprocess
 
 import undetected_chromedriver as uc
 
@@ -68,8 +69,6 @@ def get_driver():
     options.add_argument("--disable-backgrounding-occluded-windows")
     options.add_argument("--js-flags=--max-old-space-size=512")
 
-    # Auto-detect Chrome version
-    import subprocess
     chrome_ver = None
     try:
         if platform.system() == "Windows":

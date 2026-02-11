@@ -10,7 +10,6 @@ def _build_search_url(keyword):
     return f"https://www.naukri.com/{slug}-jobs-in-bengaluru?experience=0&jobAge=1"
 
 
-
 def _parse_job_cards(soup, keyword):
     jobs = []
 
