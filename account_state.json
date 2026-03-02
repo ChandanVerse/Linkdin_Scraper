@@ -1,0 +1,20 @@
+{
+  "0": {
+    "searches_today": 0,
+    "last_used": "2026-02-27T13:45:59.106885",
+    "cooldown_until": null,
+    "challenges": 0
+  },
+  "1": {
+    "searches_today": 0,
+    "last_used": null,
+    "cooldown_until": "2026-02-27T14:03:05.721971",
+    "challenges": 6
+  },
+  "2": {
+    "searches_today": 4,
+    "last_used": "2026-02-27T13:52:36.927032",
+    "cooldown_until": null,
+    "challenges": 0
+  }
+}

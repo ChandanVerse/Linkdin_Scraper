@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.env
+.claude/
+linkedin_cookies.json
+debug/
+applied_jobs.json
+chrome_profile_linkedin/
+chrome_profile_others/
+seen_jobs_linkedin.json
+seen_jobs_others.json
+chrome_profile_indeed/
+chrome_profile_li_0/
+chrome_profile_li_1/
+chrome_profile_li_2/
