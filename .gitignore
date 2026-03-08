@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets & credentials
+.env
+linkedin_cookies*.json
+account_state.json
+
+# Chrome profiles (contain session data)
+chrome_profile_*/
+
+# Runtime data
+seen_jobs*.json
+applied_jobs.json
+debug/
+
+# IDE / tools
+.claude/
