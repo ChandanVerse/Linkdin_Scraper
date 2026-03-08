@@ -7,19 +7,6 @@ load_dotenv()
 # Discord webhook URL
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
-# ── LinkedIn Accounts ──────────────────────────────────────────────────
-# Accounts are loaded from .env for security.
-# Add these to your .env file:
-#   LINKEDIN_ACCOUNT_0_EMAIL=chandantavane99@gmail.com
-#   LINKEDIN_ACCOUNT_0_PASSWORD=KKom3#JES$bA^c8q
-#   LINKEDIN_ACCOUNT_0_NAME=Account 1
-#   LINKEDIN_ACCOUNT_1_EMAIL=Brofist2399@gmail.com
-#   LINKEDIN_ACCOUNT_1_PASSWORD=BroFist@123
-#   LINKEDIN_ACCOUNT_1_NAME=Account 2
-#   LINKEDIN_ACCOUNT_2_EMAIL=scrapnull0@gmail.com
-#   LINKEDIN_ACCOUNT_2_PASSWORD=ScrapNull@123
-#   LINKEDIN_ACCOUNT_2_NAME=Account 3
-
 def _load_accounts_from_env():
     accounts = []
     i = 0
@@ -55,6 +42,8 @@ SEARCH_KEYWORDS = [
     "MLOps",
     "Artificial Intelligence Engineer",
     "Associate AI/ML Engineer",
+    "Generative AI Engineer",
+    "Applied AI Engineer",
 ]
 
 # Relevant domain terms — job title must contain at least one of these
@@ -90,6 +79,10 @@ BLACKLISTED_COMPANIES = [
     "Webs X UM",
     "inficore soft",
     "VEDIST SYSTEMS PRIVATE LIMITED",
+    "Uplers",
+    "Atricu MakeuspeakEdtech",
+    "Binated",
+    "scoutit",
 ]
 
 # Enable/disable job sites
