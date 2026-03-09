@@ -1,7 +1,10 @@
 import json
 import os
+import threading
 
 MAX_SEEN_JOBS = 5000
+
+_file_lock = threading.Lock()
 
 
 def _get_path(filename="seen_jobs.json"):
@@ -9,22 +12,24 @@ def _get_path(filename="seen_jobs.json"):
 
 
 def load_seen_jobs(filename="seen_jobs.json"):
-    path = _get_path(filename)
-    if not os.path.exists(path):
-        return []
-    try:
-        with open(path, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return []
+    with _file_lock:
+        path = _get_path(filename)
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return []
 
 
 def save_seen_jobs(seen_jobs, filename="seen_jobs.json"):
-    # Cap to prevent unbounded growth
-    if len(seen_jobs) > MAX_SEEN_JOBS:
-        seen_jobs = seen_jobs[-MAX_SEEN_JOBS:]
-    with open(_get_path(filename), "w") as f:
-        json.dump(seen_jobs, f)
+    with _file_lock:
+        # Cap to prevent unbounded growth
+        if len(seen_jobs) > MAX_SEEN_JOBS:
+            seen_jobs = seen_jobs[-MAX_SEEN_JOBS:]
+        with open(_get_path(filename), "w") as f:
+            json.dump(seen_jobs, f)
 
 
 def filter_new_jobs(jobs, seen_jobs):

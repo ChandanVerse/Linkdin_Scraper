@@ -11,6 +11,7 @@ SOURCE_COLORS = {
     "Indeed": 0x003A9B,
     "Foundit": 0xFF6B35,
     "Internshala": 0x00A5EC,
+    "Google Jobs": 0x4285F4,
 }
 
 

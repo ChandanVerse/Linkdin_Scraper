@@ -1,7 +1,8 @@
 """
-main.py — sequential scraping with instant per-job Discord notifications.
+main.py — parallel scraping with instant per-job Discord notifications.
 
-Order: LinkedIn → Internshala → Naukri
+Group 1 (Thread 1): LinkedIn → Internshala
+Group 2 (Thread 2): Naukri → Google Jobs
 
 Jobs are sent to Discord the moment they are found and verified as new —
 not after the full scrape cycle finishes.
@@ -11,6 +12,7 @@ import os
 import shutil
 import sys
 import time
+import threading
 from datetime import datetime
 
 from config import (
@@ -41,38 +43,104 @@ def _make_instant_notifier(label: str, tracking_file: str):
     """
     Returns a callback: on_new_job(job) → notify Discord instantly + mark seen.
 
-    The scraper calls this for every job the moment it passes filters.
-    Seen-job state is kept in memory and flushed to disk after each notify
-    so duplicate suppression works across restarts too.
+    Thread-safe: uses a lock to protect the seen-job set and file writes.
     """
     from notifier import send_discord_notification
     from tracker import load_seen_jobs, mark_jobs_seen
 
     seen_jobs = load_seen_jobs(tracking_file)
     seen_set = set(seen_jobs)
+    lock = threading.Lock()
 
     def on_new_job(job: dict):
         nonlocal seen_jobs, seen_set
         job_id = job["job_id"]
-        if job_id in seen_set:
-            return  # already notified this run or a previous one
 
-        print(f"  [NOTIFY] {job['title']} at {job['company']} [{label}]")
-        ok = send_discord_notification(job)
-        if ok:
-            seen_set.add(job_id)
-            seen_jobs = mark_jobs_seen([job], seen_jobs, tracking_file)
-        else:
-            print(f"  [WARN] Discord notify failed for {job_id}")
+        with lock:
+            if job_id in seen_set:
+                return  # already notified this run or a previous one
+
+            print(f"  [NOTIFY] {job['title']} at {job['company']} [{label}]")
+            ok = send_discord_notification(job)
+            if ok:
+                seen_set.add(job_id)
+                seen_jobs = mark_jobs_seen([job], seen_jobs, tracking_file)
+            else:
+                print(f"  [WARN] Discord notify failed for {job_id}")
 
     def reload():
         """Call at the start of each cycle to pick up any new seen_jobs from disk."""
         nonlocal seen_jobs, seen_set
-        seen_jobs = load_seen_jobs(tracking_file)
-        seen_set = set(seen_jobs)
+        with lock:
+            seen_jobs = load_seen_jobs(tracking_file)
+            seen_set = set(seen_jobs)
 
     on_new_job.reload = reload
     return on_new_job
+
+
+def _run_group1(li_notify, oth_notify):
+    """Group 1: LinkedIn → Internshala (own Chrome instances)."""
+    # ── LinkedIn ──────────────────────────────────────────────────────
+    if ENABLE_LINKEDIN:
+        print("\n--- [LinkedIn] (Thread 1) ---")
+        try:
+            from linkedin_scraper import scrape_all_keywords
+            scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=li_notify)
+        except Exception as e:
+            print(f"[LinkedIn] ERROR: {e}")
+            from driver import reset_driver
+            reset_driver()
+
+    # ── Internshala ───────────────────────────────────────────────────
+    if ENABLE_INTERNSHALA:
+        print("\n--- [Internshala] (Thread 1) ---")
+        try:
+            from driver import set_profile, reset_driver
+            reset_driver()  # close LinkedIn's driver
+            set_profile("others")
+            from internshala_scraper import scrape_all_keywords
+            scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
+        except Exception as e:
+            print(f"[Internshala] ERROR: {e}")
+            from driver import reset_driver
+            reset_driver()
+
+    # Clean up this thread's driver
+    from driver import reset_driver
+    reset_driver()
+
+
+def _run_group2(oth_notify):
+    """Group 2: Naukri → Google Jobs (own Chrome instance)."""
+    from driver import set_profile
+    set_profile("others2")
+
+    # ── Naukri ────────────────────────────────────────────────────────
+    if ENABLE_NAUKRI:
+        print("\n--- [Naukri] (Thread 2) ---")
+        try:
+            from naukri_scraper import scrape_all_keywords
+            scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
+        except Exception as e:
+            print(f"[Naukri] ERROR: {e}")
+            from driver import reset_driver
+            reset_driver()
+
+    # ── Google Jobs ───────────────────────────────────────────────────
+    if ENABLE_GOOGLE_JOBS:
+        print("\n--- [Google Jobs] (Thread 2) ---")
+        try:
+            from google_jobs_scraper import scrape_all_keywords
+            scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
+        except Exception as e:
+            print(f"[Google Jobs] ERROR: {e}")
+            from driver import reset_driver
+            reset_driver()
+
+    # Clean up this thread's driver
+    from driver import reset_driver
+    reset_driver()
 
 
 def main():
@@ -88,63 +156,29 @@ def main():
 
     once = "--once" in sys.argv
 
-    # Create per-source instant notifiers (persist across cycles)
+    # Create per-source instant notifiers (persist across cycles, thread-safe)
     li_notify  = _make_instant_notifier("LinkedIn",    "seen_jobs_linkedin.json")
     oth_notify = _make_instant_notifier("Others",      "seen_jobs_others.json")
 
     while True:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"\n{'=' * 55}")
-        print(f"[{now}] Starting scrape cycle")
+        print(f"[{now}] Starting scrape cycle (parallel)")
         print("=" * 55)
 
         # Reload seen-job sets at the top of each cycle
         li_notify.reload()
         oth_notify.reload()
 
-        # ── 1. LinkedIn ────────────────────────────────────────────────
-        if ENABLE_LINKEDIN:
-            print("\n--- [LinkedIn] ---")
-            try:
-                from linkedin_scraper import scrape_all_keywords
-                scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=li_notify)
-            except Exception as e:
-                print(f"[LinkedIn] ERROR: {e}")
-                from driver import reset_driver
-                reset_driver()
+        # Launch both groups in parallel
+        t1 = threading.Thread(target=_run_group1, args=(li_notify, oth_notify), name="Group1")
+        t2 = threading.Thread(target=_run_group2, args=(oth_notify,), name="Group2")
 
-        # ── 2. Internshala ─────────────────────────────────────────────
-        if ENABLE_INTERNSHALA:
-            print("\n--- [Internshala] ---")
-            try:
-                from internshala_scraper import scrape_all_keywords
-                scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
-            except Exception as e:
-                print(f"[Internshala] ERROR: {e}")
-                from driver import reset_driver
-                reset_driver()
+        t1.start()
+        t2.start()
 
-        # ── 3. Naukri ──────────────────────────────────────────────────
-        if ENABLE_NAUKRI:
-            print("\n--- [Naukri] ---")
-            try:
-                from naukri_scraper import scrape_all_keywords
-                scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
-            except Exception as e:
-                print(f"[Naukri] ERROR: {e}")
-                from driver import reset_driver
-                reset_driver()
-
-        # ── 4. Google Jobs ────────────────────────────────────────────
-        if ENABLE_GOOGLE_JOBS:
-            print("\n--- [Google Jobs] ---")
-            try:
-                from google_jobs_scraper import scrape_all_keywords
-                scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
-            except Exception as e:
-                print(f"[Google Jobs] ERROR: {e}")
-                from driver import reset_driver
-                reset_driver()
+        t1.join()
+        t2.join()
 
         if once:
             print("\nDone (--once mode).")

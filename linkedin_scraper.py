@@ -36,7 +36,7 @@ from config import (
     MIN_ROTATION_DELAY,
     TIME_FILTER,
 )
-from driver import get_driver, parse_age_hours, passes_filters, reset_driver
+from driver import get_driver, parse_age_hours, passes_filters, reset_driver, set_profile
 from notifier import send_discord_alert
 
 COOKIES_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -203,7 +203,7 @@ def _ensure_logged_in(account: dict, account_idx: int) -> tuple:
     # CRITICAL: set profile suffix before get_driver() so the right
     # Chrome profile directory is used
     profile = f"li_{account_idx}"
-    os.environ["CHROME_PROFILE_SUFFIX"] = profile
+    set_profile(profile)
     print(f"  Opening Chrome profile: chrome_profile_{profile}")
 
     driver = get_driver()

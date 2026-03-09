@@ -2,6 +2,7 @@ import os
 import platform
 import re
 import subprocess
+import threading
 
 import undetected_chromedriver as uc
 
@@ -12,8 +13,23 @@ from config import (
     RELEVANT_TITLE_TERMS,
 )
 
-_driver = None
+# Thread-local storage: each thread gets its own driver + profile
+_tls = threading.local()
+
+# Track all drivers across threads for close_all_drivers()
+_all_drivers = []
+_all_drivers_lock = threading.Lock()
+
 _display = None
+
+
+def set_profile(suffix: str):
+    """Set Chrome profile suffix for the current thread."""
+    _tls.profile_suffix = suffix
+
+
+def _get_profile() -> str:
+    return getattr(_tls, "profile_suffix", os.environ.get("CHROME_PROFILE_SUFFIX", ""))
 
 
 def _start_xvfb():
@@ -35,25 +51,25 @@ def _start_xvfb():
 
 
 def get_driver():
-    global _driver
-    if _driver is not None:
+    driver = getattr(_tls, "driver", None)
+    if driver is not None:
         try:
-            _driver.title  # verify session is still alive
-            return _driver
+            driver.title  # verify session is still alive
+            return driver
         except Exception:
             print("  [WARN] Browser session died, restarting...")
             try:
-                _driver.quit()
+                driver.quit()
             except Exception:
                 pass
-            _driver = None
+            _tls.driver = None
 
     _start_xvfb()
 
     options = uc.ChromeOptions()
 
-    # Per-process Chrome profile support
-    profile_suffix = os.environ.get("CHROME_PROFILE_SUFFIX", "")
+    # Per-thread Chrome profile support
+    profile_suffix = _get_profile()
     if profile_suffix:
         profile_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                    f"chrome_profile_{profile_suffix}")
@@ -86,34 +102,50 @@ def get_driver():
     except Exception:
         pass
 
-    _driver = uc.Chrome(options=options, headless=False, version_main=chrome_ver)
-    _driver.set_page_load_timeout(60)
-    return _driver
+    driver = uc.Chrome(options=options, headless=False, version_main=chrome_ver)
+    driver.set_page_load_timeout(60)
+    _tls.driver = driver
+
+    with _all_drivers_lock:
+        _all_drivers.append(driver)
+
+    return driver
 
 
 def reset_driver():
-    global _driver
-    try:
-        _driver.quit()
-    except Exception:
-        pass
-    _driver = None
-
-
-def close_driver():
-    global _driver, _display
-    if _driver:
+    driver = getattr(_tls, "driver", None)
+    if driver:
         try:
-            _driver.quit()
+            driver.quit()
         except Exception:
             pass
-        _driver = None
+        with _all_drivers_lock:
+            if driver in _all_drivers:
+                _all_drivers.remove(driver)
+    _tls.driver = None
+
+
+def close_all_drivers():
+    """Close every driver across all threads + Xvfb."""
+    global _display
+    with _all_drivers_lock:
+        for d in _all_drivers:
+            try:
+                d.quit()
+            except Exception:
+                pass
+        _all_drivers.clear()
+    _tls.driver = None
     if _display:
         try:
             _display.stop()
         except Exception:
             pass
         _display = None
+
+
+# Keep backward compat alias
+close_driver = close_all_drivers
 
 
 def parse_age_hours(text):
