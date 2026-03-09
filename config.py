@@ -57,7 +57,7 @@ RELEVANT_TITLE_TERMS = [
 LOCATION = "Bengaluru, Karnataka, India"
 
 # f_TPR filter: r300 = jobs posted in last 5 minutes
-TIME_FILTER = "r300"
+TIME_FILTER = "r600"
 
 # How often to run the full cycle (in seconds)
 RUN_INTERVAL = 300
