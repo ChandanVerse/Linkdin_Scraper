@@ -20,6 +20,11 @@ _tls = threading.local()
 _all_drivers = []
 _all_drivers_lock = threading.Lock()
 
+# Serialize Chrome driver creation — undetected_chromedriver patches the
+# binary on disk, so two threads creating drivers at the same time will
+# fight over the file.
+_creation_lock = threading.Lock()
+
 _display = None
 
 
@@ -64,50 +69,53 @@ def get_driver():
                 pass
             _tls.driver = None
 
-    _start_xvfb()
+    # Lock so only one thread creates a driver at a time —
+    # undetected_chromedriver patches the binary on disk.
+    with _creation_lock:
+        _start_xvfb()
 
-    options = uc.ChromeOptions()
+        options = uc.ChromeOptions()
 
-    # Per-thread Chrome profile support
-    profile_suffix = _get_profile()
-    if profile_suffix:
-        profile_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                   f"chrome_profile_{profile_suffix}")
-        os.makedirs(profile_dir, exist_ok=True)
-        options.add_argument(f"--user-data-dir={profile_dir}")
+        # Per-thread Chrome profile support
+        profile_suffix = _get_profile()
+        if profile_suffix:
+            profile_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       f"chrome_profile_{profile_suffix}")
+            os.makedirs(profile_dir, exist_ok=True)
+            options.add_argument(f"--user-data-dir={profile_dir}")
 
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    # Memory-saving flags for EC2 / low-RAM servers
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-background-networking")
-    options.add_argument("--disable-default-apps")
-    options.add_argument("--disable-renderer-backgrounding")
-    options.add_argument("--disable-backgrounding-occluded-windows")
-    options.add_argument("--js-flags=--max-old-space-size=512")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+        # Memory-saving flags for EC2 / low-RAM servers
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-background-networking")
+        options.add_argument("--disable-default-apps")
+        options.add_argument("--disable-renderer-backgrounding")
+        options.add_argument("--disable-backgrounding-occluded-windows")
+        options.add_argument("--js-flags=--max-old-space-size=512")
 
-    chrome_ver = None
-    try:
-        if platform.system() == "Windows":
-            out = subprocess.check_output(
-                r'reg query "HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon" /v version',
-                shell=True, text=True
-            )
-            chrome_ver = int(out.strip().split()[-1].split(".")[0])
-        else:
-            out = subprocess.check_output(["google-chrome", "--version"], text=True)
-            chrome_ver = int(out.strip().split()[-1].split(".")[0])
-    except Exception:
-        pass
+        chrome_ver = None
+        try:
+            if platform.system() == "Windows":
+                out = subprocess.check_output(
+                    r'reg query "HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon" /v version',
+                    shell=True, text=True
+                )
+                chrome_ver = int(out.strip().split()[-1].split(".")[0])
+            else:
+                out = subprocess.check_output(["google-chrome", "--version"], text=True)
+                chrome_ver = int(out.strip().split()[-1].split(".")[0])
+        except Exception:
+            pass
 
-    driver = uc.Chrome(options=options, headless=False, version_main=chrome_ver)
-    driver.set_page_load_timeout(60)
-    _tls.driver = driver
+        driver = uc.Chrome(options=options, headless=False, version_main=chrome_ver)
+        driver.set_page_load_timeout(60)
+        _tls.driver = driver
 
-    with _all_drivers_lock:
-        _all_drivers.append(driver)
+        with _all_drivers_lock:
+            _all_drivers.append(driver)
 
     return driver
 

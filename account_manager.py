@@ -161,8 +161,8 @@ class AccountManager:
         lines = ["[AccountManager] Account pool:"]
         for i, acc in enumerate(self.accounts):
             st = self._acc_state(i)
-            badge = "🔴 COOLDOWN" if self._is_on_cooldown(i) else "🟢 OK"
-            marker = " ◄ current" if i == self._current_idx else ""
+            badge = "[COOLDOWN]" if self._is_on_cooldown(i) else "[OK]"
+            marker = " << current" if i == self._current_idx else ""
             cd_str = ""
             if self._is_on_cooldown(i):
                 remaining = (
