@@ -2,12 +2,13 @@
 Google Jobs scraper — scrapes Google's job search results (udm=8).
 
 Uses JavaScript extraction to parse job cards from the page.
-CSS classes (as of March 2026):
-  - a.MQUd2b       = job card link (contains vhid/docid in href)
+CSS classes (verified March 2026):
+  - a.MQUd2b       = job card link (contains docid in hash fragment)
   - .tNxQIb        = job title
   - .MKCbgd.a3jPc  = company name
   - .FqK3wc        = location
   - .K3eUK         = posted time ("4 days ago")
+  - Apply links     = identified by 'google_jobs_apply' in href
 """
 
 import re
@@ -23,7 +24,7 @@ var results = [];
 for (var i = 0; i < cards.length; i++) {
     var link = cards[i];
     var href = link.getAttribute('href') || '';
-    var docMatch = href.match(/docid[=%3D]+([^&]+)/);
+    var docMatch = href.match(/docid[=%3D]+([^&]+)/) || href.match(/docid%3D([^&]+)/);
     if (!docMatch) continue;
 
     var titleEl = link.querySelector('.tNxQIb');
@@ -47,20 +48,15 @@ return results;
 
 # JS to extract the external apply URL from the job detail panel after clicking a card
 _EXTRACT_APPLY_URL_JS = """
-// Look for the "Apply" button/link in the job detail panel
-var applyLinks = document.querySelectorAll('a.pMhGee, a[jsname="HUL5je"], a[data-ved]');
-for (var i = 0; i < applyLinks.length; i++) {
-    var href = applyLinks[i].href || '';
-    // Filter out Google internal links — we want the external apply URL
-    if (href && !href.includes('google.com/search') && !href.startsWith('javascript:')
-        && (href.startsWith('http://') || href.startsWith('https://'))) {
-        return href;
-    }
+// Best method: find links with google_jobs_apply tracking param (stable indicator)
+var allLinks = document.querySelectorAll('a[href*="google_jobs_apply"]');
+if (allLinks.length > 0) {
+    return allLinks[0].href;
 }
-// Fallback: try any external link in the job detail area
-var detailPanel = document.querySelector('.whazf, .gws-plugins-horizon-jobs__tl-lif');
-if (detailPanel) {
-    var links = detailPanel.querySelectorAll('a[href]');
+// Fallback: find "Apply on ..." links in any dialog/detail panel
+var dialogs = document.querySelectorAll('[role="dialog"], [role="complementary"]');
+for (var d = 0; d < dialogs.length; d++) {
+    var links = dialogs[d].querySelectorAll('a[href]');
     for (var i = 0; i < links.length; i++) {
         var href = links[i].href || '';
         if (href && !href.includes('google.com') && !href.startsWith('javascript:')
@@ -81,9 +77,10 @@ def _build_search_url(keyword):
 def _build_google_jobs_url(keyword, docid):
     """Build a direct Google Jobs URL that opens the specific job listing panel."""
     q = urllib.parse.quote_plus(f"{keyword} jobs in Bengaluru")
+    encoded_docid = urllib.parse.quote(docid, safe='')
     return (
         f"https://www.google.com/search?q={q}&udm=8"
-        f"#htivrt=jobs&htidocid={docid}"
+        f"#vhid=vt%3D20/docid%3D{encoded_docid}&vssid=jobs-detail-viewer"
     )
 
 
@@ -102,10 +99,14 @@ def _try_get_apply_url(driver, card_index):
         if not clicked:
             return ""
 
-        time.sleep(1.5)  # wait for the detail panel to load
+        # Wait for the detail dialog to load, retry if needed
+        for attempt in range(3):
+            time.sleep(1.5)
+            apply_url = driver.execute_script(_EXTRACT_APPLY_URL_JS)
+            if apply_url:
+                return apply_url
 
-        apply_url = driver.execute_script(_EXTRACT_APPLY_URL_JS)
-        return apply_url or ""
+        return ""
     except Exception:
         return ""
 
