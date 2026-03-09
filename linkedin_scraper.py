@@ -434,23 +434,29 @@ def _apply_time_filter(driver, jobs: list[dict], logged_in: bool, on_new_job=Non
                 print(f"    [WARN] Detail panel error for '{job['title']}': {e}")
 
         if time_text:
-            age = parse_age_hours(time_text.lower())
-            if age is not None and age > MAX_JOB_AGE_HOURS:
-                print(f"    [SKIP] {job['title']} (posted {age}h ago) - too old")
-                consecutive_skips += 1
-                if consecutive_skips >= MAX_CONSECUTIVE_OLD:
-                    print(f"    [STOP] {MAX_CONSECUTIVE_OLD} consecutive skips — stopping this keyword")
-                    break
-                continue
-            if age is None:
-                print(f"    [SKIP] Unrecognised time '{time_text}' for {job['title']} — skipping")
-                consecutive_skips += 1
-                if consecutive_skips >= MAX_CONSECUTIVE_OLD:
-                    print(f"    [STOP] {MAX_CONSECUTIVE_OLD} consecutive skips — stopping this keyword")
-                    break
-                continue
-            # Age is valid and within limit — reset skip counter
-            consecutive_skips = 0
+            # Reposted jobs are still active — always let them through
+            is_reposted = "reposted" in time_text.lower()
+            if is_reposted:
+                print(f"    [REPOST] {job['title']} at {job['company']} — including reposted job")
+                consecutive_skips = 0
+            else:
+                age = parse_age_hours(time_text.lower())
+                if age is not None and age > MAX_JOB_AGE_HOURS:
+                    print(f"    [SKIP] {job['title']} (posted {age}h ago) - too old")
+                    consecutive_skips += 1
+                    if consecutive_skips >= MAX_CONSECUTIVE_OLD:
+                        print(f"    [STOP] {MAX_CONSECUTIVE_OLD} consecutive skips — stopping this keyword")
+                        break
+                    continue
+                if age is None:
+                    print(f"    [SKIP] Unrecognised time '{time_text}' for {job['title']} — skipping")
+                    consecutive_skips += 1
+                    if consecutive_skips >= MAX_CONSECUTIVE_OLD:
+                        print(f"    [STOP] {MAX_CONSECUTIVE_OLD} consecutive skips — stopping this keyword")
+                        break
+                    continue
+                # Age is valid and within limit — reset skip counter
+                consecutive_skips = 0
         else:
             print(f"    [SKIP] No posting time for {job['title']} — skipping")
             consecutive_skips += 1
