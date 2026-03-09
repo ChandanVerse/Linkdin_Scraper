@@ -15,6 +15,7 @@ from datetime import datetime
 
 from config import (
     DISCORD_WEBHOOK_URL,
+    ENABLE_GOOGLE_JOBS,
     ENABLE_INTERNSHALA,
     ENABLE_LINKEDIN,
     ENABLE_NAUKRI,
@@ -131,6 +132,17 @@ def main():
                 scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
             except Exception as e:
                 print(f"[Naukri] ERROR: {e}")
+                from driver import reset_driver
+                reset_driver()
+
+        # ── 4. Google Jobs ────────────────────────────────────────────
+        if ENABLE_GOOGLE_JOBS:
+            print("\n--- [Google Jobs] ---")
+            try:
+                from google_jobs_scraper import scrape_all_keywords
+                scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
+            except Exception as e:
+                print(f"[Google Jobs] ERROR: {e}")
                 from driver import reset_driver
                 reset_driver()
 

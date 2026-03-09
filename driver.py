@@ -5,21 +5,15 @@ import subprocess
 
 import undetected_chromedriver as uc
 
-from config import BLACKLISTED_COMPANIES, MAX_JOB_AGE_HOURS, RELEVANT_TITLE_TERMS
+from config import (
+    BLACKLISTED_COMPANIES,
+    BLACKLISTED_TITLE_KEYWORDS,
+    MAX_JOB_AGE_HOURS,
+    RELEVANT_TITLE_TERMS,
+)
 
 _driver = None
 _display = None
-
-EXCLUDE_TITLE_KEYWORDS = [
-    "senior", "sr.", "sr ", "lead", "principal", "staff", "manager",
-    "director", "head of", "vp ", "vice president", "architect",
-    "10+", "8+", "7+", "6+", "5+", "4+",
-    "14+", "12+", "11+", "9+",
-    "years", "yrs",
-    "l4", "l5", "l6", "l7",
-    "sde 3", "sde3", "sde-3", "sde iii", "sde-iii",
-    "technologist",
-]
 
 
 def _start_xvfb():
@@ -296,7 +290,7 @@ VALID_LOCATIONS = ["bangalore", "bengaluru"]
 def passes_filters(title, company, card_text=None, location=None):
     """Return (passes, skip_reason) tuple."""
     title_lower = title.lower()
-    if any(kw in title_lower for kw in EXCLUDE_TITLE_KEYWORDS):
+    if any(kw in title_lower for kw in BLACKLISTED_TITLE_KEYWORDS):
         return False, f"{title}"
     if not any(term in title_lower for term in RELEVANT_TITLE_TERMS):
         return False, f"{title} (irrelevant)"

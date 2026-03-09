@@ -85,9 +85,22 @@ BLACKLISTED_COMPANIES = [
     "scoutit",
 ]
 
+# Blacklisted title keywords — jobs with these in the title are skipped
+BLACKLISTED_TITLE_KEYWORDS = [
+    "senior", "sr.", "sr ", "lead", "principal", "staff", "manager",
+    "director", "head of", "vp ", "vice president", "architect",
+    "10+", "8+", "7+", "6+", "5+", "4+",
+    "14+", "12+", "11+", "9+",
+    "years", "yrs",
+    "l4", "l5", "l6", "l7",
+    "sde 3", "sde3", "sde-3", "sde iii", "sde-iii",
+    "technologist",
+]
+
 # Enable/disable job sites
 ENABLE_LINKEDIN = True
 ENABLE_INTERNSHALA = True
 ENABLE_NAUKRI = True
 ENABLE_INDEED = False
 ENABLE_FOUNDIT = False
+ENABLE_GOOGLE_JOBS = True
