@@ -15,7 +15,11 @@ import re
 import time
 import urllib.parse
 
-from driver import get_driver, passes_filters
+from driver import get_driver, parse_age_hours, passes_filters
+
+# Google Jobs has coarser time resolution than LinkedIn,
+# so use a separate (more lenient) max-age window.
+GOOGLE_MAX_JOB_AGE_HOURS = 24
 
 
 _EXTRACT_JOBS_JS = """
@@ -71,7 +75,7 @@ return '';
 
 def _build_search_url(keyword):
     q = keyword.replace(" ", "+")
-    return f"https://www.google.com/search?q={q}+jobs+in+Bengaluru&udm=8"
+    return f"https://www.google.com/search?q={q}+jobs+in+Bengaluru&udm=8&chips=date_posted:today"
 
 
 def _build_google_jobs_url(keyword, docid):
@@ -141,10 +145,19 @@ def _extract_jobs(driver, keyword):
 
             job_id = f"gj_{re.sub(r'[^a-z0-9]', '', docid.lower())[:80]}"
 
-            passes, reason = passes_filters(title, company, time_text, location)
+            # Use passes_filters but without time_text so it skips the
+            # shared MAX_JOB_AGE_HOURS check; we do our own age check below.
+            passes, reason = passes_filters(title, company, None, location)
             if not passes:
                 print(f"    [SKIP] {reason}")
                 continue
+
+            # Google-specific age filter (24h instead of the global 3h)
+            if time_text:
+                age = parse_age_hours(time_text)
+                if age is not None and age > GOOGLE_MAX_JOB_AGE_HOURS:
+                    print(f"    [SKIP] {title} (posted {age}h ago)")
+                    continue
 
             # Try to get the actual external apply URL by clicking the card
             apply_url = _try_get_apply_url(driver, idx)
