@@ -87,14 +87,32 @@ BLACKLISTED_COMPANIES = [
 
 # Blacklisted title keywords — jobs with these in the title are skipped
 BLACKLISTED_TITLE_KEYWORDS = [
+    # Seniority / management
     "senior", "sr.", "sr ", "lead", "principal", "staff", "manager",
     "director", "head of", "vp ", "vice president", "architect",
+    "management", "managing", "program manager", "project manager",
+    "product manager", "account manager", "team lead",
+    # Experience levels
     "10+", "8+", "7+", "6+", "5+", "4+",
     "14+", "12+", "11+", "9+",
     "years", "yrs",
     "l4", "l5", "l6", "l7",
     "sde 3", "sde3", "sde-3", "sde iii", "sde-iii",
+    # Unrelated roles
     "technologist",
+    "content writer", "content writing", "copywriter", "article writer",
+    "technical writer", "blog writer", "editor",
+    "robotics", "robot", "embedded",
+    "sales", "business development", "bde", "bda",
+    "marketing", "digital marketing", "seo", "sem",
+    "hr ", "human resource", "recruiter", "recruitment",
+    "finance", "accounting", "accountant", "chartered",
+    "teacher", "trainer", "faculty", "professor", "tutor",
+    "graphic design", "ui/ux", "ux design", "ui design",
+    "customer support", "customer service", "helpdesk",
+    "telecaller", "telesales", "call center",
+    "civil engineer", "mechanical engineer", "electrical engineer",
+    "pharmacy", "medical", "nurse", "doctor",
 ]
 
 # Enable/disable job sites
