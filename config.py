@@ -83,6 +83,8 @@ BLACKLISTED_COMPANIES = [
     "Atricu MakeuspeakEdtech",
     "Binated",
     "scoutit",
+    "ge vernova",
+    "uplers",
 ]
 
 # Blacklisted title keywords — jobs with these in the title are skipped
@@ -121,4 +123,4 @@ ENABLE_INTERNSHALA = True
 ENABLE_NAUKRI = True
 ENABLE_INDEED = False
 ENABLE_FOUNDIT = False
-ENABLE_GOOGLE_JOBS = True
+ENABLE_GOOGLE_JOBS = False
