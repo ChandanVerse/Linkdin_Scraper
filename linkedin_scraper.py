@@ -137,6 +137,78 @@ def _restore_cookies(driver, account_idx: int) -> bool:
 
 # ── Login ──────────────────────────────────────────────────────────────
 
+def _dismiss_welcome_back(driver, email: str, password: str) -> bool:
+    """
+    Handle the LinkedIn 'Welcome back / Continue as [account]' interstitial.
+
+    LinkedIn sometimes shows this page instead of the normal login form when
+    the browser profile already has a remembered session or the user has
+    visited before. The page has a 'Continue as [Name]' button that skips
+    the email field and sometimes the password field too.
+
+    Returns True if the interstitial was detected and handled (successfully
+    logged in), False if the page looked normal (caller should proceed with
+    the standard form).
+    """
+    try:
+        # Detect: page has no visible #username field OR has a "continue as" button
+        continue_btn = None
+
+        # Try multiple selectors LinkedIn has used for this button
+        for selector in [
+            "button.btn__primary--large[data-litms-control-urn]",
+            "button[data-control-name='continue_as_member']",
+            "a[data-control-name='continue_as_member']",
+            ".join-form__form-body button[type='submit']",
+        ]:
+            try:
+                continue_btn = driver.find_element(By.CSS_SELECTOR, selector)
+                break
+            except Exception:
+                pass
+
+        # Also check by button text as a fallback
+        if not continue_btn:
+            try:
+                buttons = driver.find_elements(By.TAG_NAME, "button")
+                for btn in buttons:
+                    txt = btn.text.strip().lower()
+                    if txt.startswith("continue as") or txt.startswith("sign in as"):
+                        continue_btn = btn
+                        break
+            except Exception:
+                pass
+
+        if not continue_btn:
+            return False  # Normal login page — let the standard flow handle it
+
+        print("  Detected 'Welcome back / Continue as' screen — clicking to proceed ...")
+        driver.execute_script("arguments[0].click();", continue_btn)
+        time.sleep(3)
+
+        # After clicking, LinkedIn may land on a password-only page or go straight to feed
+        if _is_logged_in(driver.current_url):
+            return True
+
+        # Password step may appear
+        try:
+            pwd_field = WebDriverWait(driver, 8).until(
+                EC.presence_of_element_located((By.ID, "password"))
+            )
+            pwd_field.clear()
+            pwd_field.send_keys(password)
+            driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
+            time.sleep(5)
+        except Exception:
+            pass  # No password step needed
+
+        return True  # Caller will verify the final URL
+
+    except Exception as e:
+        print(f"  [WARN] Welcome-back handler error: {e}")
+        return False
+
+
 def _login_fresh(driver, account: dict, account_idx: int) -> bool:
     """Perform a fresh username+password login. Returns True on success."""
     email = account.get("email", "")
@@ -152,9 +224,44 @@ def _login_fresh(driver, account: dict, account_idx: int) -> bool:
         driver.get("https://www.linkedin.com/login")
         time.sleep(3)
 
-        email_field = WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.ID, "username"))
-        )
+        # Handle "Welcome back / Continue as [account]" interstitial first
+        if _dismiss_welcome_back(driver, email, password):
+            print(f"  Welcome-back flow completed for {name}")
+            current = driver.current_url
+            if _is_logged_in(current):
+                print(f"  Login successful for {name}")
+                _save_cookies(driver, account_idx)
+                return True
+            if _is_challenge(current):
+                print(f"  LinkedIn challenge/verification required for {name}")
+                print("  -> Complete the verification in the browser window.")
+                print("  -> Waiting up to 120 seconds...")
+                for _ in range(40):
+                    time.sleep(3)
+                    if _is_logged_in(driver.current_url):
+                        print(f"  Verification passed for {name}")
+                        _save_cookies(driver, account_idx)
+                        return True
+                print(f"  Verification timed out for {name}")
+                _get_account_manager().mark_challenge()
+                return False
+            print(f"  Welcome-back flow did not complete login for {name} — URL: {current}")
+            # Fall through to try the standard form in case the page changed
+
+        # Standard username + password form
+        try:
+            email_field = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, "username"))
+            )
+        except Exception:
+            # #username field not found — check if we somehow ended up logged in
+            if _is_logged_in(driver.current_url):
+                print(f"  Login successful for {name} (no form needed)")
+                _save_cookies(driver, account_idx)
+                return True
+            print(f"  [WARN] Could not locate login form for {name} — URL: {driver.current_url}")
+            return False
+
         email_field.clear()
         email_field.send_keys(email)
 
