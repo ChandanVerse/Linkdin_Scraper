@@ -91,6 +91,20 @@ def _make_instant_notifier(label: str, tracking_file: str):
     return on_new_job
 
 
+def _run_startup_sweep(li_notify):
+    """One-time 24h LinkedIn sweep to catch jobs posted while offline."""
+    if not ENABLE_LINKEDIN:
+        return
+    print("\n--- [LinkedIn] Startup 24h sweep ---")
+    try:
+        from linkedin_scraper import startup_sweep
+        startup_sweep(SEARCH_KEYWORDS, on_new_job=li_notify)
+    except Exception as e:
+        print(f"[LinkedIn] Startup sweep ERROR: {e}")
+        from driver import reset_driver
+        reset_driver()
+
+
 def _run_group1(li_notify, oth_notify):
     """Group 1: LinkedIn → Internshala (own Chrome instances)."""
     # ── LinkedIn ──────────────────────────────────────────────────────
@@ -171,6 +185,13 @@ def main():
     # Create per-source instant notifiers (persist across cycles, thread-safe)
     li_notify  = _make_instant_notifier("LinkedIn",    "seen_jobs_linkedin.json")
     oth_notify = _make_instant_notifier("Others",      "seen_jobs_others.json")
+
+    # ── Startup sweep: one 24h search per keyword to catch missed jobs ──
+    if not _shutdown.is_set():
+        print(f"\n{'=' * 55}")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Running startup 24h sweep")
+        print("=" * 55)
+        _run_startup_sweep(li_notify)
 
     while not _shutdown.is_set():
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

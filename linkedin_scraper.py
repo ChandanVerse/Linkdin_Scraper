@@ -44,6 +44,8 @@ from config import (
     SEARCH_CYCLES,
     SEARCH_DELAY_MAX,
     SEARCH_DELAY_MIN,
+    STARTUP_MAX_JOB_AGE_HOURS,
+    STARTUP_TIME_FILTER,
     TIME_FILTER,
 )
 from driver import get_driver, parse_age_hours, passes_filters, reset_driver, set_profile
@@ -408,11 +410,12 @@ def _try_next_account(am) -> tuple:
 
 # ── URL building ───────────────────────────────────────────────────────
 
-def _build_search_url(keyword: str) -> str:
+def _build_search_url(keyword: str, time_filter: str | None = None) -> str:
+    tpr = time_filter or TIME_FILTER
     params = [
         f"keywords={keyword.replace(' ', '%20')}",
         f"location={LOCATION.replace(' ', '%20').replace(',', '%2C')}",
-        f"f_TPR={TIME_FILTER}",
+        f"f_TPR={tpr}",
     ]
     if EXPERIENCE_LEVELS:
         params.append(f"f_E={'%2C'.join(EXPERIENCE_LEVELS)}")
@@ -545,16 +548,18 @@ def _get_time_from_detail_panel(driver) -> str | None:
     return None
 
 
-def _apply_time_filter(driver, jobs: list[dict], logged_in: bool, on_new_job=None) -> None:
+def _apply_time_filter(driver, jobs: list[dict], logged_in: bool, on_new_job=None,
+                       max_age_hours: float | None = None) -> None:
     """
     Validate posting age for each job. Calls on_new_job(job) instantly for
     each job that passes. Returns nothing — notification happens in-place.
 
     Jobs are SKIPPED (not notified) when:
-    - Posting age exceeds MAX_JOB_AGE_HOURS
+    - Posting age exceeds max_age_hours (defaults to MAX_JOB_AGE_HOURS)
     - No posting time could be determined (unknown age = skip)
     - Time text is present but unparseable
     """
+    age_limit = max_age_hours if max_age_hours is not None else MAX_JOB_AGE_HOURS
     consecutive_skips = 0
 
     for job in jobs:
@@ -589,7 +594,7 @@ def _apply_time_filter(driver, jobs: list[dict], logged_in: bool, on_new_job=Non
                 consecutive_skips = 0
             else:
                 age = parse_age_hours(time_text.lower())
-                if age is not None and age > MAX_JOB_AGE_HOURS:
+                if age is not None and age > age_limit:
                     print(f"    [SKIP] {job['title']} (posted {age}h ago) - too old")
                     consecutive_skips += 1
                     if consecutive_skips >= MAX_CONSECUTIVE_OLD:
@@ -745,4 +750,65 @@ def scrape_all_keywords(keywords: list[str], on_new_job=None) -> None:
     reset_driver()
     if not already_rotated:
         am.rotate()
+    print(am.status())
+
+
+def startup_sweep(keywords: list[str], on_new_job=None) -> None:
+    """
+    One-time 24-hour sweep on startup: search each keyword once with
+    STARTUP_TIME_FILTER (r86400) and STARTUP_MAX_JOB_AGE_HOURS (24h).
+    Catches jobs posted while the scraper was offline.
+    """
+    print("\n  === STARTUP SWEEP (24h catch-up) ===")
+    am = _get_account_manager()
+    print(am.status())
+
+    driver, account_name, logged_in = _try_next_account(am)
+    if not logged_in:
+        print("  [LinkedIn] No account could log in — skipping startup sweep.")
+        send_discord_alert(
+            "LinkedIn startup sweep: ALL accounts failed to log in — skipped."
+        )
+        reset_driver()
+        return
+
+    print(f"  Active account: {account_name}")
+
+    for idx, keyword in enumerate(keywords):
+        url = _build_search_url(keyword, time_filter=STARTUP_TIME_FILTER)
+        driver.get(url)
+        _human_delay(3, 6)
+
+        if _is_challenge(driver.current_url):
+            print(f"  Challenge on '{keyword}' during startup sweep!")
+            am.mark_challenge()
+            send_discord_alert(
+                f"LinkedIn startup sweep: Challenge on **{account_name}** "
+                f"while scraping '{keyword}' — switching account."
+            )
+            reset_driver()
+            am.rotate()
+            driver, account_name, logged_in = _try_next_account(am)
+            if not logged_in:
+                print("  [LinkedIn] No more accounts — stopping startup sweep.")
+                break
+            print(f"  Switched to: {account_name}")
+            driver.get(url)
+            _human_delay(3, 6)
+
+        _human_scroll(driver, scrolls=random.randint(3, 5))
+
+        soup = BeautifulSoup(driver.page_source, "lxml")
+        jobs = _parse_job_cards(soup, keyword)
+        print(f"  [{account_name}] {keyword}: {len(jobs)} candidate(s) (24h)")
+        _apply_time_filter(driver, jobs, logged_in, on_new_job,
+                           max_age_hours=STARTUP_MAX_JOB_AGE_HOURS)
+
+        if idx < len(keywords) - 1:
+            _human_delay(SEARCH_DELAY_MIN, SEARCH_DELAY_MAX)
+
+    am.record_used()
+    reset_driver()
+    am.rotate()
+    print("  === STARTUP SWEEP COMPLETE ===\n")
     print(am.status())

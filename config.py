@@ -56,8 +56,12 @@ RELEVANT_TITLE_TERMS = [
 # Location for job search
 LOCATION = "Bengaluru, Karnataka, India"
 
-# f_TPR filter: r300 = jobs posted in last 5 minutes
+# f_TPR filter: r600 = jobs posted in last 10 minutes
 TIME_FILTER = "r600"
+
+# Startup sweep: one 24-hour search per keyword when the project starts
+STARTUP_TIME_FILTER = "r86400"          # 24 hours in seconds
+STARTUP_MAX_JOB_AGE_HOURS = 24          # allow jobs up to 24h old during startup
 
 # No idle gap — cycles run back-to-back continuously
 RUN_INTERVAL = 0
