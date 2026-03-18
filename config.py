@@ -59,8 +59,15 @@ LOCATION = "Bengaluru, Karnataka, India"
 # f_TPR filter: r300 = jobs posted in last 5 minutes
 TIME_FILTER = "r600"
 
-# How often to run the full cycle (in seconds)
-RUN_INTERVAL = 300
+# No idle gap — cycles run back-to-back continuously
+RUN_INTERVAL = 0
+
+# Pacing: 3 full cycles of all keywords within ~30 min
+SEARCH_CYCLES = 3              # how many times to search all keywords per run
+SEARCH_DELAY_MIN = 20          # seconds between each keyword search
+SEARCH_DELAY_MAX = 40
+CYCLE_BREAK_MIN = 120          # seconds between full cycles (2 min)
+CYCLE_BREAK_MAX = 180          # (3 min)
 
 # Max age of job posting to notify (in hours)
 MAX_JOB_AGE_HOURS = 3

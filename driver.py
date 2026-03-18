@@ -1,10 +1,10 @@
 import os
 import platform
+import random
 import re
-import subprocess
 import threading
 
-import undetected_chromedriver as uc
+from seleniumbase import Driver
 
 from config import (
     BLACKLISTED_COMPANIES,
@@ -13,6 +13,8 @@ from config import (
     RELEVANT_TITLE_TERMS,
 )
 
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Thread-local storage: each thread gets its own driver + profile
 _tls = threading.local()
 
@@ -20,9 +22,7 @@ _tls = threading.local()
 _all_drivers = []
 _all_drivers_lock = threading.Lock()
 
-# Serialize Chrome driver creation — undetected_chromedriver patches the
-# binary on disk, so two threads creating drivers at the same time will
-# fight over the file.
+# Serialize driver creation to avoid race conditions
 _creation_lock = threading.Lock()
 
 _display = None
@@ -69,48 +69,38 @@ def get_driver():
                 pass
             _tls.driver = None
 
-    # Lock so only one thread creates a driver at a time —
-    # undetected_chromedriver patches the binary on disk.
     with _creation_lock:
         _start_xvfb()
 
-        options = uc.ChromeOptions()
-
         # Per-thread Chrome profile support
         profile_suffix = _get_profile()
+        user_data_dir = None
         if profile_suffix:
-            profile_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                       f"chrome_profile_{profile_suffix}")
-            os.makedirs(profile_dir, exist_ok=True)
-            options.add_argument(f"--user-data-dir={profile_dir}")
+            user_data_dir = os.path.join(
+                _BASE_DIR,
+                f"chrome_profile_{profile_suffix}",
+            )
+            os.makedirs(user_data_dir, exist_ok=True)
 
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--window-size=1920,1080")
-        # Memory-saving flags for EC2 / low-RAM servers
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-background-networking")
-        options.add_argument("--disable-default-apps")
-        options.add_argument("--disable-renderer-backgrounding")
-        options.add_argument("--disable-backgrounding-occluded-windows")
-        options.add_argument("--js-flags=--max-old-space-size=512")
+        # Randomize window size slightly to avoid fingerprinting
+        w = random.randint(1890, 1920)
+        h = random.randint(1020, 1080)
 
-        chrome_ver = None
-        try:
-            if platform.system() == "Windows":
-                out = subprocess.check_output(
-                    r'reg query "HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon" /v version',
-                    shell=True, text=True
-                )
-                chrome_ver = int(out.strip().split()[-1].split(".")[0])
-            else:
-                out = subprocess.check_output(["google-chrome", "--version"], text=True)
-                chrome_ver = int(out.strip().split()[-1].split(".")[0])
-        except Exception:
-            pass
+        # Extra Chromium args (only essential ones — no automation-fingerprint flags)
+        extra_args = "--no-sandbox,--disable-dev-shm-usage,--disable-gpu"
 
-        driver = uc.Chrome(options=options, headless=False, version_main=chrome_ver)
+        # Use Linux headed mode if xvfb is running
+        headed = True if platform.system() == "Linux" and _display else None
+
+        driver = Driver(
+            uc=True,
+            headless=False,
+            headed=headed,
+            user_data_dir=user_data_dir,
+            chromium_arg=extra_args,
+            window_size=f"{w},{h}",
+            page_load_strategy="normal",
+        )
         driver.set_page_load_timeout(60)
         _tls.driver = driver
 
@@ -334,7 +324,7 @@ def passes_filters(title, company, card_text=None, location=None):
         return False, f"{title}"
     if not any(term in title_lower for term in RELEVANT_TITLE_TERMS):
         return False, f"{title} (irrelevant)"
-    if any(bl in company.lower() for bl in BLACKLISTED_COMPANIES):
+    if any(bl.lower() in company.lower() for bl in BLACKLISTED_COMPANIES):
         return False, f"{company} (blacklisted)"
     if location and not any(loc in location.lower() for loc in VALID_LOCATIONS):
         return False, f"{title} (location: {location})"

@@ -9,6 +9,7 @@ not after the full scrape cycle finishes.
 """
 
 import os
+import signal
 import shutil
 import sys
 import time
@@ -25,6 +26,17 @@ from config import (
     RUN_INTERVAL,
     SEARCH_KEYWORDS,
 )
+
+# ── Graceful shutdown on Ctrl+C ──────────────────────────────────────
+_shutdown = threading.Event()
+
+
+def _handle_sigint(sig, frame):
+    print("\n[INFO] Ctrl+C received — shutting down gracefully...")
+    _shutdown.set()
+
+
+signal.signal(signal.SIGINT, _handle_sigint)
 
 
 def _migrate_seen_jobs():
@@ -160,7 +172,7 @@ def main():
     li_notify  = _make_instant_notifier("LinkedIn",    "seen_jobs_linkedin.json")
     oth_notify = _make_instant_notifier("Others",      "seen_jobs_others.json")
 
-    while True:
+    while not _shutdown.is_set():
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"\n{'=' * 55}")
         print(f"[{now}] Starting scrape cycle (parallel)")
@@ -170,9 +182,9 @@ def main():
         li_notify.reload()
         oth_notify.reload()
 
-        # Launch both groups in parallel
-        t1 = threading.Thread(target=_run_group1, args=(li_notify, oth_notify), name="Group1")
-        t2 = threading.Thread(target=_run_group2, args=(oth_notify,), name="Group2")
+        # Launch both groups in parallel (daemon so they die on exit)
+        t1 = threading.Thread(target=_run_group1, args=(li_notify, oth_notify), name="Group1", daemon=True)
+        t2 = threading.Thread(target=_run_group2, args=(oth_notify,), name="Group2", daemon=True)
 
         t1.start()
         t2.start()
@@ -180,12 +192,24 @@ def main():
         t1.join()
         t2.join()
 
+        if _shutdown.is_set():
+            break
+
         if once:
             print("\nDone (--once mode).")
             break
 
-        print(f"\nCycle complete. Next run in {RUN_INTERVAL}s...")
-        time.sleep(RUN_INTERVAL)
+        if RUN_INTERVAL > 0:
+            print(f"\nCycle complete. Next run in {RUN_INTERVAL}s...")
+            _shutdown.wait(timeout=RUN_INTERVAL)
+        else:
+            print("\nCycle complete. Starting next cycle immediately...")
+
+    # Clean up all browser instances
+    print("[INFO] Cleaning up drivers...")
+    from driver import close_all_drivers
+    close_all_drivers()
+    print("[INFO] Shutdown complete.")
 
 
 if __name__ == "__main__":

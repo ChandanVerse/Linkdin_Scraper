@@ -17,13 +17,18 @@ the next account's profile.
 
 import json
 import os
+import random
 import re
 import time
 
 from bs4 import BeautifulSoup
+from humancursor import SystemCursor
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+
+_cursor = SystemCursor()
 
 from account_manager import AccountManager
 from config import (
@@ -34,6 +39,11 @@ from config import (
     MAX_JOB_AGE_HOURS,
     MAX_ROTATION_DELAY,
     MIN_ROTATION_DELAY,
+    CYCLE_BREAK_MAX,
+    CYCLE_BREAK_MIN,
+    SEARCH_CYCLES,
+    SEARCH_DELAY_MAX,
+    SEARCH_DELAY_MIN,
     TIME_FILTER,
 )
 from driver import get_driver, parse_age_hours, passes_filters, reset_driver, set_profile
@@ -68,6 +78,39 @@ def _get_account_manager() -> AccountManager:
         os.environ.setdefault("MAX_ROTATION_DELAY", str(MAX_ROTATION_DELAY))
         _account_manager = AccountManager(LINKEDIN_ACCOUNTS)
     return _account_manager
+
+
+# ── Human-like helpers ─────────────────────────────────────────────────
+
+def _human_delay(low: float, high: float):
+    """Sleep for a randomized duration using Gaussian distribution."""
+    mean = (low + high) / 2
+    std = (high - low) / 4
+    delay = max(low, min(high, random.gauss(mean, std)))
+    time.sleep(delay)
+
+
+def _human_click(driver, element):
+    """Click an element using HumanCursor for realistic mouse movement."""
+    try:
+        _cursor.click_on(element)
+    except Exception as e:
+        print(f"  [WARN] HumanCursor failed ({e}), falling back to ActionChains")
+        ActionChains(driver).move_to_element(element).pause(
+            random.uniform(0.1, 0.3)
+        ).click().perform()
+
+
+def _human_scroll(driver, scrolls: int = 3):
+    """Scroll the page in small increments with random pauses."""
+    for _ in range(scrolls):
+        scroll_px = random.randint(300, 600)
+        driver.execute_script(f"window.scrollBy(0, {scroll_px});")
+        _human_delay(0.8, 2.5)
+    # Small chance of scrolling back up slightly (like a real user)
+    if random.random() < 0.3:
+        driver.execute_script(f"window.scrollBy(0, -{random.randint(50, 150)});")
+        _human_delay(0.5, 1.2)
 
 
 # ── URL / session checks ───────────────────────────────────────────────
@@ -111,7 +154,7 @@ def _restore_cookies(driver, account_idx: int) -> bool:
 
         # Must be on linkedin.com domain before adding cookies
         driver.get("https://www.linkedin.com")
-        time.sleep(2)
+        _human_delay(2, 4)
 
         for cookie in cookies:
             cookie.pop("sameSite", None)
@@ -122,7 +165,7 @@ def _restore_cookies(driver, account_idx: int) -> bool:
                 pass
 
         driver.get("https://www.linkedin.com/feed/")
-        time.sleep(4)
+        _human_delay(4, 7)
 
         if _is_logged_in(driver.current_url):
             print(f"  Cookie session restored for account {account_idx}")
@@ -133,6 +176,24 @@ def _restore_cookies(driver, account_idx: int) -> bool:
     except Exception as e:
         print(f"  [WARN] Cookie restore failed for account {account_idx}: {e}")
         return False
+
+
+# ── Challenge verification wait ────────────────────────────────────────
+
+def _wait_for_verification(driver, name: str, account_idx: int) -> bool:
+    """Wait up to 120s for the user to complete a LinkedIn challenge. Returns True on success."""
+    print(f"  LinkedIn challenge/verification required for {name}")
+    print("  -> Complete the verification in the browser window.")
+    print("  -> Waiting up to 120 seconds...")
+    for _ in range(40):  # 40 x 3s = 120s
+        time.sleep(3)
+        if _is_logged_in(driver.current_url):
+            print(f"  Verification passed for {name}")
+            _save_cookies(driver, account_idx)
+            return True
+    print(f"  Verification timed out for {name}")
+    _get_account_manager().mark_challenge()
+    return False
 
 
 # ── Login ──────────────────────────────────────────────────────────────
@@ -183,8 +244,8 @@ def _dismiss_welcome_back(driver, email: str, password: str) -> bool:
             return False  # Normal login page — let the standard flow handle it
 
         print("  Detected 'Welcome back / Continue as' screen — clicking to proceed ...")
-        driver.execute_script("arguments[0].click();", continue_btn)
-        time.sleep(3)
+        _human_click(driver, continue_btn)
+        _human_delay(3, 5)
 
         # After clicking, LinkedIn may land on a password-only page or go straight to feed
         if _is_logged_in(driver.current_url):
@@ -197,8 +258,9 @@ def _dismiss_welcome_back(driver, email: str, password: str) -> bool:
             )
             pwd_field.clear()
             pwd_field.send_keys(password)
-            driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
-            time.sleep(5)
+            submit_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+            _human_click(driver, submit_btn)
+            _human_delay(4, 7)
         except Exception:
             pass  # No password step needed
 
@@ -222,7 +284,7 @@ def _login_fresh(driver, account: dict, account_idx: int) -> bool:
     print(f"  Logging in fresh as {name} ({email}) ...")
     try:
         driver.get("https://www.linkedin.com/login")
-        time.sleep(3)
+        _human_delay(3, 5)
 
         # Handle "Welcome back / Continue as [account]" interstitial first
         if _dismiss_welcome_back(driver, email, password):
@@ -233,18 +295,7 @@ def _login_fresh(driver, account: dict, account_idx: int) -> bool:
                 _save_cookies(driver, account_idx)
                 return True
             if _is_challenge(current):
-                print(f"  LinkedIn challenge/verification required for {name}")
-                print("  -> Complete the verification in the browser window.")
-                print("  -> Waiting up to 120 seconds...")
-                for _ in range(40):
-                    time.sleep(3)
-                    if _is_logged_in(driver.current_url):
-                        print(f"  Verification passed for {name}")
-                        _save_cookies(driver, account_idx)
-                        return True
-                print(f"  Verification timed out for {name}")
-                _get_account_manager().mark_challenge()
-                return False
+                return _wait_for_verification(driver, name, account_idx)
             print(f"  Welcome-back flow did not complete login for {name} — URL: {current}")
             # Fall through to try the standard form in case the page changed
 
@@ -269,8 +320,9 @@ def _login_fresh(driver, account: dict, account_idx: int) -> bool:
         pwd_field.clear()
         pwd_field.send_keys(password)
 
-        driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
-        time.sleep(6)   # wait for redirect
+        submit_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+        _human_click(driver, submit_btn)
+        _human_delay(5, 8)   # wait for redirect
 
         current = driver.current_url
         if _is_logged_in(current):
@@ -279,18 +331,7 @@ def _login_fresh(driver, account: dict, account_idx: int) -> bool:
             return True
 
         if _is_challenge(current):
-            print(f"  LinkedIn challenge/verification required for {name}")
-            print("  -> Complete the verification in the browser window.")
-            print("  -> Waiting up to 120 seconds...")
-            for _ in range(40):  # 40 x 3s = 120s
-                time.sleep(3)
-                if _is_logged_in(driver.current_url):
-                    print(f"  Verification passed for {name}")
-                    _save_cookies(driver, account_idx)
-                    return True
-            print(f"  Verification timed out for {name}")
-            _get_account_manager().mark_challenge()
-            return False
+            return _wait_for_verification(driver, name, account_idx)
 
         print(f"  Login failed for {name} - unexpected URL: {current}")
         return False
@@ -527,9 +568,9 @@ def _apply_time_filter(driver, jobs: list[dict], logged_in: bool, on_new_job=Non
                     By.CSS_SELECTOR, f"a[href*='/jobs/view/{job_id_num}']"
                 )
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", link)
-                time.sleep(0.3)
-                driver.execute_script("arguments[0].click();", link)
-                time.sleep(1.5)
+                _human_delay(0.5, 1.2)
+                _human_click(driver, link)
+                _human_delay(2, 4)
 
                 if _is_challenge(driver.current_url):
                     print("  Challenge while browsing detail panel!")
@@ -588,14 +629,12 @@ def _scrape_recommended(driver, logged_in: bool, on_new_job=None) -> None:
     ]:
         try:
             driver.get(url)
-            time.sleep(3)
+            _human_delay(3, 6)
             if _is_challenge(driver.current_url):
                 print("  Challenge on collections page!")
                 _get_account_manager().mark_challenge()
                 break
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(1)
+            _human_scroll(driver, scrolls=5)
             soup = BeautifulSoup(driver.page_source, "lxml")
             page_jobs = _parse_job_cards(soup, "Recommended")
             label = url.rstrip("/").split("/")[-1]
@@ -612,12 +651,10 @@ def linkedin_login(email: str, password: str):
     pass
 
 
-def scrape_all_keywords(keywords: list[str], batch_size: int = 1, on_new_job=None) -> None:
+def scrape_all_keywords(keywords: list[str], on_new_job=None) -> None:
     """
-    Scrape all keywords for ONE round, then rotate to the next account.
-
-    Login is REQUIRED — if an account fails to log in, it notifies Discord
-    and tries the next account. If ALL accounts fail, the round is skipped.
+    Scrape all keywords for SEARCH_CYCLES rounds (~30 min total),
+    then rotate to the next account.
     """
     am = _get_account_manager()
     print(am.status())
@@ -637,73 +674,66 @@ def scrape_all_keywords(keywords: list[str], batch_size: int = 1, on_new_job=Non
     print(f"  Active account: {account_name}")
     already_rotated = False
 
-    # ── Scrape all keywords ────────────────────────────────────────────
-    i = 0
-    while i < len(keywords):
-        batch = keywords[i:i + batch_size]
+    # ── Scrape all keywords SEARCH_CYCLES times (~30 min total) ─────────
+    for cycle in range(SEARCH_CYCLES):
+        print(f"\n  === Search cycle {cycle + 1}/{SEARCH_CYCLES} ===")
 
-        for j, keyword in enumerate(batch):
+        for idx, keyword in enumerate(keywords):
             url = _build_search_url(keyword)
-            if j == 0:
-                driver.get(url)
-            else:
-                driver.switch_to.new_window("tab")
-                driver.get(url)
-            time.sleep(1)
+            driver.get(url)
+            _human_delay(3, 6)
 
-        time.sleep(2)
+            # Check for challenge
+            if _is_challenge(driver.current_url):
+                print(f"  Challenge on '{keyword}'!")
+                am.mark_challenge()
+                send_discord_alert(
+                    f"LinkedIn: Challenge/CAPTCHA hit on **{account_name}** "
+                    f"while scraping '{keyword}' — switching to next account."
+                )
+                reset_driver()
+                am.rotate()
+                driver, account_name, logged_in = _try_next_account(am)
+                already_rotated = True
 
-        challenge_triggered = False
-        for j, keyword in enumerate(batch):
-            try:
-                driver.switch_to.window(driver.window_handles[j])
-
-                if _is_challenge(driver.current_url):
-                    print(f"  ⚠ Challenge on '{keyword}'!")
-                    am.mark_challenge()
+                if not logged_in:
+                    print("  [LinkedIn] No more accounts available — stopping remaining keywords.")
                     send_discord_alert(
-                        f"LinkedIn: Challenge/CAPTCHA hit on **{account_name}** "
-                        f"while scraping '{keyword}' — switching to next account."
+                        "LinkedIn: All accounts exhausted mid-round — "
+                        "remaining keywords skipped."
                     )
-                    challenge_triggered = True
                     break
 
-                for _ in range(3):
-                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    time.sleep(0.5)
+                print(f"  Switched to: {account_name}")
+                driver.get(url)
+                _human_delay(3, 6)
 
-                soup = BeautifulSoup(driver.page_source, "lxml")
-                jobs = _parse_job_cards(soup, keyword)
-                print(f"  [{account_name}] {keyword}: {len(jobs)} candidate(s)")
-                _apply_time_filter(driver, jobs, logged_in, on_new_job)
+            # Human-like scrolling
+            _human_scroll(driver, scrolls=random.randint(3, 5))
 
-            except Exception as e:
-                print(f"  [ERROR] keyword='{keyword}': {e}")
+            soup = BeautifulSoup(driver.page_source, "lxml")
+            jobs = _parse_job_cards(soup, keyword)
+            print(f"  [{account_name}] {keyword}: {len(jobs)} candidate(s)")
+            _apply_time_filter(driver, jobs, logged_in, on_new_job)
 
-        # Close extra tabs
-        while len(driver.window_handles) > 1:
-            driver.switch_to.window(driver.window_handles[-1])
-            driver.close()
-        if driver.window_handles:
-            driver.switch_to.window(driver.window_handles[0])
+            # Small delay between keywords (skip after last in cycle)
+            if idx < len(keywords) - 1:
+                _human_delay(SEARCH_DELAY_MIN, SEARCH_DELAY_MAX)
 
-        if challenge_triggered:
-            reset_driver()
-            am.rotate()
-            driver, account_name, logged_in = _try_next_account(am)
-            already_rotated = True
+        if not logged_in:
+            break
 
-            if not logged_in:
-                print("  [LinkedIn] No more accounts available — stopping remaining keywords.")
-                send_discord_alert(
-                    "LinkedIn: All accounts exhausted mid-round — "
-                    "remaining keywords skipped."
-                )
-                break
+        # Break between cycles (skip after last cycle)
+        if cycle < SEARCH_CYCLES - 1:
+            print(f"  Cycle {cycle + 1} done. Pausing {CYCLE_BREAK_MIN/60:.0f}-{CYCLE_BREAK_MAX/60:.0f} min before next cycle...")
+            _human_delay(CYCLE_BREAK_MIN, CYCLE_BREAK_MAX)
 
-            print(f"  Switched to: {account_name}")
-
-        i += batch_size
+            # Occasionally visit feed between cycles
+            if random.random() < 0.3:
+                print("  Visiting feed briefly (human behavior)...")
+                driver.get("https://www.linkedin.com/feed/")
+                _human_delay(5, 15)
+                _human_scroll(driver, scrolls=random.randint(1, 3))
 
     # ── Recommended collections ───────────────────────────────────────
     if logged_in:
