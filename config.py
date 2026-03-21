@@ -66,10 +66,10 @@ STARTUP_MAX_JOB_AGE_HOURS = 24          # allow jobs up to 24h old during startu
 # No idle gap — cycles run back-to-back continuously
 RUN_INTERVAL = 0
 
-# Pacing: 3 full cycles of all keywords within ~30 min
-SEARCH_CYCLES = 3              # how many times to search all keywords per run
-SEARCH_DELAY_MIN = 20          # seconds between each keyword search
-SEARCH_DELAY_MAX = 40
+# Pacing: 1 cycle per run, ~5 min total (15 keywords × ~15s ≈ 4 min)
+SEARCH_CYCLES = 1              # single pass through all keywords per run
+SEARCH_DELAY_MIN = 10          # seconds between each keyword search
+SEARCH_DELAY_MAX = 20
 CYCLE_BREAK_MIN = 120          # seconds between full cycles (2 min)
 CYCLE_BREAK_MAX = 180          # (3 min)
 
