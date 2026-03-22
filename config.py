@@ -63,15 +63,12 @@ TIME_FILTER = "r600"
 STARTUP_TIME_FILTER = "r86400"          # 24 hours in seconds
 STARTUP_MAX_JOB_AGE_HOURS = 24          # allow jobs up to 24h old during startup
 
-# No idle gap — cycles run back-to-back continuously
-RUN_INTERVAL = 0
+# 5-minute gap between each full pass of all keywords
+RUN_INTERVAL = 300
 
-# Pacing: 1 cycle per run, ~5 min total (15 keywords × ~15s ≈ 4 min)
-SEARCH_CYCLES = 1              # single pass through all keywords per run
-SEARCH_DELAY_MIN = 10          # seconds between each keyword search
-SEARCH_DELAY_MAX = 20
-CYCLE_BREAK_MIN = 120          # seconds between full cycles (2 min)
-CYCLE_BREAK_MAX = 180          # (3 min)
+# 20-40s between each keyword search
+SEARCH_DELAY_MIN = 20
+SEARCH_DELAY_MAX = 40
 
 # Max age of job posting to notify (in hours)
 MAX_JOB_AGE_HOURS = 3
@@ -132,6 +129,4 @@ BLACKLISTED_TITLE_KEYWORDS = [
 ENABLE_LINKEDIN = True
 ENABLE_INTERNSHALA = True
 ENABLE_NAUKRI = True
-ENABLE_INDEED = False
-ENABLE_FOUNDIT = False
-ENABLE_GOOGLE_JOBS = False
+ENABLE_INDEED = True

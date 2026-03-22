@@ -39,9 +39,6 @@ from config import (
     MAX_JOB_AGE_HOURS,
     MAX_ROTATION_DELAY,
     MIN_ROTATION_DELAY,
-    CYCLE_BREAK_MAX,
-    CYCLE_BREAK_MIN,
-    SEARCH_CYCLES,
     SEARCH_DELAY_MAX,
     SEARCH_DELAY_MIN,
     STARTUP_MAX_JOB_AGE_HOURS,
@@ -658,8 +655,8 @@ def linkedin_login(email: str, password: str):
 
 def scrape_all_keywords(keywords: list[str], on_new_job=None) -> None:
     """
-    Scrape all keywords for SEARCH_CYCLES rounds (~30 min total),
-    then rotate to the next account.
+    Single pass through all keywords, then rotate to the next account.
+    The 5-minute interval between passes is handled by main.py (RUN_INTERVAL).
     """
     am = _get_account_manager()
     print(am.status())
@@ -679,66 +676,47 @@ def scrape_all_keywords(keywords: list[str], on_new_job=None) -> None:
     print(f"  Active account: {account_name}")
     already_rotated = False
 
-    # ── Scrape all keywords SEARCH_CYCLES times (~30 min total) ─────────
-    for cycle in range(SEARCH_CYCLES):
-        print(f"\n  === Search cycle {cycle + 1}/{SEARCH_CYCLES} ===")
+    for idx, keyword in enumerate(keywords):
+        url = _build_search_url(keyword)
+        driver.get(url)
+        _human_delay(3, 6)
 
-        for idx, keyword in enumerate(keywords):
-            url = _build_search_url(keyword)
+        # Check for challenge
+        if _is_challenge(driver.current_url):
+            print(f"  Challenge on '{keyword}'!")
+            am.mark_challenge()
+            send_discord_alert(
+                f"LinkedIn: Challenge/CAPTCHA hit on **{account_name}** "
+                f"while scraping '{keyword}' — switching to next account."
+            )
+            reset_driver()
+            am.rotate()
+            driver, account_name, logged_in = _try_next_account(am)
+            already_rotated = True
+
+            if not logged_in:
+                print("  [LinkedIn] No more accounts available — stopping remaining keywords.")
+                send_discord_alert(
+                    "LinkedIn: All accounts exhausted mid-round — "
+                    "remaining keywords skipped."
+                )
+                break
+
+            print(f"  Switched to: {account_name}")
             driver.get(url)
             _human_delay(3, 6)
 
-            # Check for challenge
-            if _is_challenge(driver.current_url):
-                print(f"  Challenge on '{keyword}'!")
-                am.mark_challenge()
-                send_discord_alert(
-                    f"LinkedIn: Challenge/CAPTCHA hit on **{account_name}** "
-                    f"while scraping '{keyword}' — switching to next account."
-                )
-                reset_driver()
-                am.rotate()
-                driver, account_name, logged_in = _try_next_account(am)
-                already_rotated = True
+        # Human-like scrolling
+        _human_scroll(driver, scrolls=random.randint(3, 5))
 
-                if not logged_in:
-                    print("  [LinkedIn] No more accounts available — stopping remaining keywords.")
-                    send_discord_alert(
-                        "LinkedIn: All accounts exhausted mid-round — "
-                        "remaining keywords skipped."
-                    )
-                    break
+        soup = BeautifulSoup(driver.page_source, "lxml")
+        jobs = _parse_job_cards(soup, keyword)
+        print(f"  [{account_name}] {keyword}: {len(jobs)} candidate(s)")
+        _apply_time_filter(driver, jobs, logged_in, on_new_job)
 
-                print(f"  Switched to: {account_name}")
-                driver.get(url)
-                _human_delay(3, 6)
-
-            # Human-like scrolling
-            _human_scroll(driver, scrolls=random.randint(3, 5))
-
-            soup = BeautifulSoup(driver.page_source, "lxml")
-            jobs = _parse_job_cards(soup, keyword)
-            print(f"  [{account_name}] {keyword}: {len(jobs)} candidate(s)")
-            _apply_time_filter(driver, jobs, logged_in, on_new_job)
-
-            # Small delay between keywords (skip after last in cycle)
-            if idx < len(keywords) - 1:
-                _human_delay(SEARCH_DELAY_MIN, SEARCH_DELAY_MAX)
-
-        if not logged_in:
-            break
-
-        # Break between cycles (skip after last cycle)
-        if cycle < SEARCH_CYCLES - 1:
-            print(f"  Cycle {cycle + 1} done. Pausing {CYCLE_BREAK_MIN/60:.0f}-{CYCLE_BREAK_MAX/60:.0f} min before next cycle...")
-            _human_delay(CYCLE_BREAK_MIN, CYCLE_BREAK_MAX)
-
-            # Occasionally visit feed between cycles
-            if random.random() < 0.3:
-                print("  Visiting feed briefly (human behavior)...")
-                driver.get("https://www.linkedin.com/feed/")
-                _human_delay(5, 15)
-                _human_scroll(driver, scrolls=random.randint(1, 3))
+        # Small delay between keywords (skip after last)
+        if idx < len(keywords) - 1:
+            _human_delay(SEARCH_DELAY_MIN, SEARCH_DELAY_MAX)
 
     # ── Recommended collections ───────────────────────────────────────
     if logged_in:

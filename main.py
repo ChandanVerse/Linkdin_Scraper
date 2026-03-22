@@ -1,8 +1,8 @@
 """
 main.py — parallel scraping with instant per-job Discord notifications.
 
-Group 1 (Thread 1): LinkedIn → Internshala
-Group 2 (Thread 2): Naukri → Google Jobs
+Group 1 (Thread 1): LinkedIn
+Group 2 (Thread 2): Internshala → Naukri → Indeed
 
 Jobs are sent to Discord the moment they are found and verified as new —
 not after the full scrape cycle finishes.
@@ -12,13 +12,12 @@ import os
 import signal
 import shutil
 import sys
-import time
 import threading
 from datetime import datetime
 
 from config import (
     DISCORD_WEBHOOK_URL,
-    ENABLE_GOOGLE_JOBS,
+    ENABLE_INDEED,
     ENABLE_INTERNSHALA,
     ENABLE_LINKEDIN,
     ENABLE_NAUKRI,
@@ -105,9 +104,8 @@ def _run_startup_sweep(li_notify):
         reset_driver()
 
 
-def _run_group1(li_notify, oth_notify):
-    """Group 1: LinkedIn → Internshala (own Chrome instances)."""
-    # ── LinkedIn ──────────────────────────────────────────────────────
+def _run_group1(li_notify):
+    """Group 1: LinkedIn (own Chrome instance)."""
     if ENABLE_LINKEDIN:
         print("\n--- [LinkedIn] (Thread 1) ---")
         try:
@@ -118,29 +116,26 @@ def _run_group1(li_notify, oth_notify):
             from driver import reset_driver
             reset_driver()
 
-    # ── Internshala ───────────────────────────────────────────────────
-    if ENABLE_INTERNSHALA:
-        print("\n--- [Internshala] (Thread 1) ---")
-        try:
-            from driver import set_profile, reset_driver
-            reset_driver()  # close LinkedIn's driver
-            set_profile("others")
-            from internshala_scraper import scrape_all_keywords
-            scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
-        except Exception as e:
-            print(f"[Internshala] ERROR: {e}")
-            from driver import reset_driver
-            reset_driver()
-
     # Clean up this thread's driver
     from driver import reset_driver
     reset_driver()
 
 
 def _run_group2(oth_notify):
-    """Group 2: Naukri → Google Jobs (own Chrome instance)."""
+    """Group 2: Internshala → Naukri → Indeed (own Chrome instance)."""
     from driver import set_profile
-    set_profile("others2")
+    set_profile("others")
+
+    # ── Internshala ───────────────────────────────────────────────────
+    if ENABLE_INTERNSHALA:
+        print("\n--- [Internshala] (Thread 2) ---")
+        try:
+            from internshala_scraper import scrape_all_keywords
+            scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
+        except Exception as e:
+            print(f"[Internshala] ERROR: {e}")
+            from driver import reset_driver
+            reset_driver()
 
     # ── Naukri ────────────────────────────────────────────────────────
     if ENABLE_NAUKRI:
@@ -153,14 +148,14 @@ def _run_group2(oth_notify):
             from driver import reset_driver
             reset_driver()
 
-    # ── Google Jobs ───────────────────────────────────────────────────
-    if ENABLE_GOOGLE_JOBS:
-        print("\n--- [Google Jobs] (Thread 2) ---")
+    # ── Indeed ────────────────────────────────────────────────────────
+    if ENABLE_INDEED:
+        print("\n--- [Indeed] (Thread 2) ---")
         try:
-            from google_jobs_scraper import scrape_all_keywords
+            from indeed_scraper import scrape_all_keywords
             scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
         except Exception as e:
-            print(f"[Google Jobs] ERROR: {e}")
+            print(f"[Indeed] ERROR: {e}")
             from driver import reset_driver
             reset_driver()
 
@@ -204,7 +199,7 @@ def main():
         oth_notify.reload()
 
         # Launch both groups in parallel (daemon so they die on exit)
-        t1 = threading.Thread(target=_run_group1, args=(li_notify, oth_notify), name="Group1", daemon=True)
+        t1 = threading.Thread(target=_run_group1, args=(li_notify,), name="Group1", daemon=True)
         t2 = threading.Thread(target=_run_group2, args=(oth_notify,), name="Group2", daemon=True)
 
         t1.start()
