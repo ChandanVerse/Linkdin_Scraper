@@ -8,10 +8,7 @@ from config import DISCORD_WEBHOOK_URL
 SOURCE_COLORS = {
     "LinkedIn": 0x0A66C2,
     "Naukri": 0x2D69F0,
-    "Indeed": 0x003A9B,
-    "Foundit": 0xFF6B35,
     "Internshala": 0x00A5EC,
-    "Google Jobs": 0x4285F4,
 }
 
 

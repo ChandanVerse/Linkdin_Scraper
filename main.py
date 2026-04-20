@@ -2,7 +2,7 @@
 main.py — parallel scraping with instant per-job Discord notifications.
 
 Group 1 (Thread 1): LinkedIn
-Group 2 (Thread 2): Internshala → Naukri → Indeed
+Group 2 (Thread 2): Internshala → Naukri
 
 Jobs are sent to Discord the moment they are found and verified as new —
 not after the full scrape cycle finishes.
@@ -17,7 +17,6 @@ from datetime import datetime
 
 from config import (
     DISCORD_WEBHOOK_URL,
-    ENABLE_INDEED,
     ENABLE_INTERNSHALA,
     ENABLE_LINKEDIN,
     ENABLE_NAUKRI,
@@ -122,7 +121,7 @@ def _run_group1(li_notify):
 
 
 def _run_group2(oth_notify):
-    """Group 2: Internshala → Naukri → Indeed (own Chrome instance)."""
+    """Group 2: Internshala → Naukri (own Chrome instance)."""
     from driver import set_profile
     set_profile("others")
 
@@ -148,16 +147,6 @@ def _run_group2(oth_notify):
             from driver import reset_driver
             reset_driver()
 
-    # ── Indeed ────────────────────────────────────────────────────────
-    if ENABLE_INDEED:
-        print("\n--- [Indeed] (Thread 2) ---")
-        try:
-            from indeed_scraper import scrape_all_keywords
-            scrape_all_keywords(SEARCH_KEYWORDS, on_new_job=oth_notify)
-        except Exception as e:
-            print(f"[Indeed] ERROR: {e}")
-            from driver import reset_driver
-            reset_driver()
 
     # Clean up this thread's driver
     from driver import reset_driver

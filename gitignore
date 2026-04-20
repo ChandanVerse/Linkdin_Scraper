@@ -1,9 +1,0 @@
-__pycache__/
-*.pyc
-.env
-linkedin_cookies*.json
-account_state.json
-debug/
-applied_jobs.json
-chrome_profile_*/
-seen_jobs*.json
