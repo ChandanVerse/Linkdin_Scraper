@@ -319,6 +319,16 @@ def _login_fresh(driver, account: dict, account_idx: int) -> bool:
         pwd_field.clear()
         pwd_field.send_keys(password)
 
+        # Uncheck "Keep me logged in" / "Remember me" if present and checked
+        try:
+            checkboxes = driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+            for cb in checkboxes:
+                if cb.is_selected():
+                    driver.execute_script("arguments[0].click();", cb)
+                    _human_delay(0.5, 1.0)
+        except Exception:
+            pass
+
         submit_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
         _human_click(driver, submit_btn)
         _human_delay(5, 8)   # wait for redirect
