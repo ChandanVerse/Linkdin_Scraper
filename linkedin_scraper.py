@@ -74,7 +74,9 @@ def _parse_job_cards(soup: BeautifulSoup, keyword: str) -> list[dict]:
     if not job_cards:
         job_cards = soup.find_all("div", class_=re.compile(r"job-card-container"))
     if not job_cards:
-        job_cards = soup.find_all("div", class_="base-card")
+        job_cards = soup.find_all("div", class_=re.compile(r"base-card|base-search-card"))
+    if not job_cards:
+        job_cards = soup.find_all(attrs={"data-entity-urn": True})
 
     for card in job_cards:
         try:
@@ -82,7 +84,7 @@ def _parse_job_cards(soup: BeautifulSoup, keyword: str) -> list[dict]:
                 card.find("a", class_=re.compile(r"job-card-list__title"))
                 or card.find("a", class_=re.compile(r"job-card-container__link"))
                 or card.find("a", href=re.compile(r"/jobs/view/"))
-                or card.find("a", class_="base-card__full-link")
+                or card.find("a", class_=re.compile(r"base-card__full-link|base-search-card__full-link"))
             )
             if not link_tag:
                 continue
@@ -92,32 +94,67 @@ def _parse_job_cards(soup: BeautifulSoup, keyword: str) -> list[dict]:
             if not job_id:
                 continue
 
-            title = _get_text(card, [
-                ("a", "job-card-list__title"),
-                ("strong", None),
-                ("h3", "base-search-card__title"),
-                ("h3", None),
-            ], None) or link_tag.get_text(strip=True) or "Unknown Title"
+            # Robust Title Extraction
+            title = None
+            title_el = (
+                card.find("h3", class_=re.compile(r"base-search-card__title|base-card__title|job-search-card__title"))
+                or card.find("h3")
+                or card.find("h4", class_=re.compile(r"base-search-card__title|base-card__title|job-search-card__title"))
+                or card.find("h4")
+                or card.find(class_=re.compile(r"job-card-list__title|job-card-container__link"))
+            )
+            if title_el:
+                title = title_el.get_text(strip=True)
 
-            company_div = card.find("div", class_=re.compile(r"artdeco-entity-lockup__subtitle"))
-            if company_div:
-                span = company_div.find("span")
-                company = span.get_text(strip=True) if span else "Unknown Company"
-            else:
-                company = _get_text(card, [
-                    ("span", "job-card-container__primary-description"),
-                    ("h4", "base-search-card__subtitle"),
-                ], "Unknown Company")
+            if not title:
+                sr_only = link_tag.find("span", class_="sr-only")
+                if sr_only:
+                    title = sr_only.get_text(strip=True)
 
-            caption_div = card.find("div", class_=re.compile(r"artdeco-entity-lockup__caption"))
-            if caption_div:
-                span = caption_div.find("span")
-                location = span.get_text(strip=True) if span else "Unknown Location"
-            else:
-                location = _get_text(card, [
-                    ("li", "job-card-container__metadata-item"),
-                    ("span", "job-search-card__location"),
-                ], "Unknown Location")
+            if not title:
+                title = link_tag.get_text(strip=True)
+
+            if not title or title.strip() == "":
+                title = "Unknown Title"
+
+            # Robust Company Extraction
+            company = None
+            company_el = (
+                card.find("h4", class_=re.compile(r"base-search-card__subtitle|base-card__subtitle|job-search-card__subtitle"))
+                or card.find("a", class_=re.compile(r"hidden-nested-link|company-name-link"))
+                or card.find("div", class_=re.compile(r"artdeco-entity-lockup__subtitle"))
+                or card.find("span", class_=re.compile(r"job-card-container__primary-description"))
+                or card.find(class_=re.compile(r"company-name"))
+            )
+            if company_el:
+                span = company_el.find("span")
+                company = span.get_text(strip=True) if span else company_el.get_text(strip=True)
+            if not company:
+                company = "Unknown Company"
+
+            # Robust Location Extraction
+            location = None
+            location_el = (
+                card.find("span", class_=re.compile(r"job-search-card__location|base-search-card__metadata"))
+                or card.find("li", class_=re.compile(r"job-card-container__metadata-item"))
+                or card.find("div", class_=re.compile(r"artdeco-entity-lockup__caption"))
+                or card.find(class_=re.compile(r"location"))
+            )
+            if location_el:
+                span = location_el.find("span") if hasattr(location_el, "find") else None
+                location = span.get_text(strip=True) if span else location_el.get_text(strip=True)
+            if not location:
+                location = "Unknown Location"
+
+            # Debug Fallback: Log raw HTML if title could not be resolved
+            if title == "Unknown Title":
+                try:
+                    debug_file = "debug_unknown_title_card.html"
+                    with open(debug_file, "w", encoding="utf-8") as f:
+                        f.write(card.prettify())
+                    print(f"  [WARN] Extracted 'Unknown Title' for card. Raw HTML written to {debug_file}")
+                except Exception as ex:
+                    print(f"  [WARN] Failed to write debug HTML: {ex}")
 
             card_time = None
             time_el = card.find("time")
