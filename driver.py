@@ -194,3 +194,25 @@ def passes_filters(title, company, card_text=None, location=None):
         if age is None:
             print(f"    [WARN] Unknown posting age: '{card_text[:60]}' for {title}")
     return True, None
+
+
+def enforce_tab_limit(max_tabs=2):
+    """
+    Checks the number of open window handles for the current thread's driver
+    and closes any extra handles beyond max_tabs.
+    """
+    driver = getattr(_tls, "driver", None)
+    if not driver:
+        return
+    try:
+        handles = driver.window_handles
+        if len(handles) > max_tabs:
+            print(f"  [WARN] Found {len(handles)} tabs open. Enforcing limit of {max_tabs}...")
+            # Close extra handles from the end
+            for handle in reversed(handles[max_tabs:]):
+                driver.switch_to.window(handle)
+                driver.close()
+            # Switch back to the first handle
+            driver.switch_to.window(handles[0])
+    except Exception as e:
+        print(f"  [WARN] Failed to enforce tab limit: {e}")

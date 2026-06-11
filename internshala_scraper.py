@@ -13,7 +13,7 @@ import time
 
 from bs4 import BeautifulSoup
 
-from driver import get_driver, passes_filters
+from driver import enforce_tab_limit, get_driver, passes_filters
 
 
 # ── URL builders ───────────────────────────────────────────────────────
@@ -240,6 +240,7 @@ def scrape_all_keywords(keywords: list, batch_size: int = 2, on_new_job=None) ->
             print(f"  [Internshala] {keyword}: "
                   f"{len(found_jobs)} job(s) + {len(found_interns)} internship(s) "
                   f"= {new_count} new")
+            enforce_tab_limit(2)
 
         except Exception as e:
             print(f"  [ERROR] Internshala '{keyword}': {e}")
@@ -249,5 +250,6 @@ def scrape_all_keywords(keywords: list, batch_size: int = 2, on_new_job=None) ->
                 driver.close()
             if driver.window_handles:
                 driver.switch_to.window(driver.window_handles[0])
+            enforce_tab_limit(2)
 
     return all_jobs  # empty when on_new_job is used

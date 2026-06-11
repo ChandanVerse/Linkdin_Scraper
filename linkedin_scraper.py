@@ -21,7 +21,7 @@ from config import (
     STARTUP_TIME_FILTER,
     TIME_FILTER,
 )
-from driver import get_driver, parse_age_hours, passes_filters, reset_driver
+from driver import enforce_tab_limit, get_driver, parse_age_hours, passes_filters, reset_driver
 
 MAX_CONSECUTIVE_OLD = 3
 
@@ -226,6 +226,8 @@ def scrape_all_keywords(keywords: list[str], on_new_job=None) -> None:
         print(f"  {keyword}: {len(jobs)} candidate(s)")
         _apply_time_filter(jobs, on_new_job)
 
+        enforce_tab_limit(2)
+
         if idx < len(keywords) - 1:
             time.sleep(random.uniform(SEARCH_DELAY_MIN, SEARCH_DELAY_MAX))
 
@@ -251,6 +253,8 @@ def startup_sweep(keywords: list[str], on_new_job=None) -> None:
         jobs = _parse_job_cards(soup, keyword)
         print(f"  {keyword}: {len(jobs)} candidate(s) (24h)")
         _apply_time_filter(jobs, on_new_job, max_age_hours=STARTUP_MAX_JOB_AGE_HOURS)
+
+        enforce_tab_limit(2)
 
         if idx < len(keywords) - 1:
             time.sleep(random.uniform(SEARCH_DELAY_MIN, SEARCH_DELAY_MAX))

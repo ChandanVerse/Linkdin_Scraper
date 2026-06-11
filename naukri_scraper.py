@@ -2,7 +2,7 @@ import time
 
 from bs4 import BeautifulSoup
 
-from driver import get_driver, passes_filters
+from driver import enforce_tab_limit, get_driver, passes_filters
 
 
 def _build_search_url(keyword):
@@ -97,5 +97,6 @@ def scrape_all_keywords(keywords, batch_size=2, on_new_job=None):
             driver.switch_to.window(driver.window_handles[-1])
             driver.close()
         driver.switch_to.window(driver.window_handles[0])
+        enforce_tab_limit(2)
 
-    return all_jobs  # empty when on_new_job is useds
+    return all_jobs  # empty when on_new_job is used
