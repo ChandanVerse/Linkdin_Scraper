@@ -8,6 +8,7 @@ Filters (f_TPR, f_E) work on guest/public URLs.
 import random
 import re
 import time
+from typing import Dict, List, Optional, Union
 
 from bs4 import BeautifulSoup
 
@@ -28,7 +29,7 @@ MAX_CONSECUTIVE_OLD = 3
 
 # ── URL building ───────────────────────────────────────────────────────
 
-def _build_search_url(keyword: str, time_filter: str | None = None) -> str:
+def _build_search_url(keyword: str, time_filter: Optional[str] = None) -> str:
     tpr = time_filter or TIME_FILTER
     params = [
         f"keywords={keyword.replace(' ', '%20')}",
@@ -50,7 +51,7 @@ def _get_text(card, selectors, default):
     return default
 
 
-def _extract_job_id(url: str) -> str | None:
+def _extract_job_id(url: str) -> Optional[str]:
     try:
         path = url.split("?")[0].rstrip("/")
         last = path.split("/")[-1]
@@ -188,8 +189,8 @@ def _parse_job_cards(soup: BeautifulSoup, keyword: str) -> list[dict]:
 
 # ── Time filtering ─────────────────────────────────────────────────────
 
-def _apply_time_filter(jobs: list[dict], on_new_job=None,
-                       max_age_hours: float | None = None) -> None:
+def _apply_time_filter(jobs: List[dict], on_new_job=None,
+                       max_age_hours: Optional[float] = None) -> None:
     """
     Validate posting age for each job using card-level time text.
     Calls on_new_job(job) instantly for each job that passes.
@@ -247,7 +248,7 @@ def _scroll_page(driver, scrolls: int = 3):
 
 # ── Public entrypoints ─────────────────────────────────────────────────
 
-def scrape_all_keywords(keywords: list[str], on_new_job=None) -> None:
+def scrape_all_keywords(keywords: List[str], on_new_job=None) -> None:
     """Single pass through all keywords as a guest user."""
     driver = get_driver()
 
@@ -271,7 +272,7 @@ def scrape_all_keywords(keywords: list[str], on_new_job=None) -> None:
     reset_driver()
 
 
-def startup_sweep(keywords: list[str], on_new_job=None) -> None:
+def startup_sweep(keywords: List[str], on_new_job=None) -> None:
     """
     One-time 24-hour sweep on startup: search each keyword once with
     STARTUP_TIME_FILTER (r86400) and STARTUP_MAX_JOB_AGE_HOURS (24h).
