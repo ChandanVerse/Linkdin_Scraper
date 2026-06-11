@@ -1,6 +1,8 @@
+"""
+Shared Selenium driver and job filters for all scrapers.
+"""
+
 import os
-import platform
-import random
 import re
 import threading
 
@@ -15,51 +17,23 @@ from config import (
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Thread-local storage: each thread gets its own driver + profile
+# Thread-local storage: each thread gets its own driver
 _tls = threading.local()
 
 # Track all drivers across threads for close_all_drivers()
 _all_drivers = []
 _all_drivers_lock = threading.Lock()
-
-# Serialize driver creation to avoid race conditions
 _creation_lock = threading.Lock()
 
-_display = None
 
-
-def set_profile(suffix: str):
-    """Set Chrome profile suffix for the current thread."""
-    _tls.profile_suffix = suffix
-
-
-def _get_profile() -> str:
-    return getattr(_tls, "profile_suffix", os.environ.get("CHROME_PROFILE_SUFFIX", ""))
-
-
-def _start_xvfb():
-    """Start virtual display on Linux (for AWS/cloud servers)."""
-    global _display
-    if _display is not None:
-        return
-    if platform.system() != "Linux":
-        return
-    if os.environ.get("DISPLAY"):
-        return
-    try:
-        from xvfbwrapper import Xvfb
-        _display = Xvfb(width=1920, height=1080)
-        _display.start()
-        print("  Started Xvfb virtual display")
-    except ImportError:
-        print("  [WARN] xvfbwrapper not installed. Install with: pip install xvfbwrapper")
-
+# ── Driver lifecycle ───────────────────────────────────────────────────
 
 def get_driver():
+    """Get or create a headless Chrome driver for the current thread."""
     driver = getattr(_tls, "driver", None)
     if driver is not None:
         try:
-            driver.title  # verify session is still alive
+            driver.title
             return driver
         except Exception:
             print("  [WARN] Browser session died, restarting...")
@@ -70,40 +44,14 @@ def get_driver():
             _tls.driver = None
 
     with _creation_lock:
-        _start_xvfb()
-
-        # Per-thread Chrome profile support
-        profile_suffix = _get_profile()
-        user_data_dir = None
-        if profile_suffix:
-            user_data_dir = os.path.join(
-                _BASE_DIR,
-                f"chrome_profile_{profile_suffix}",
-            )
-            os.makedirs(user_data_dir, exist_ok=True)
-
-        # Randomize window size slightly to avoid fingerprinting
-        w = random.randint(1890, 1920)
-        h = random.randint(1020, 1080)
-
-        # Extra Chromium args (only essential ones — no automation-fingerprint flags)
-        extra_args = "--no-sandbox,--disable-dev-shm-usage,--disable-gpu"
-
-        # Use Linux headed mode if xvfb is running
-        headed = True if platform.system() == "Linux" and _display else None
-
         driver = Driver(
             uc=True,
-            headless=False,
-            headed=headed,
-            user_data_dir=user_data_dir,
-            chromium_arg=extra_args,
-            window_size=f"{w},{h}",
+            headless=True,
+            chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu",
             page_load_strategy="normal",
         )
         driver.set_page_load_timeout(60)
         _tls.driver = driver
-
         with _all_drivers_lock:
             _all_drivers.append(driver)
 
@@ -111,6 +59,7 @@ def get_driver():
 
 
 def reset_driver():
+    """Quit the current thread's driver."""
     driver = getattr(_tls, "driver", None)
     if driver:
         try:
@@ -124,8 +73,7 @@ def reset_driver():
 
 
 def close_all_drivers():
-    """Close every driver across all threads + Xvfb."""
-    global _display
+    """Quit every driver across all threads."""
     with _all_drivers_lock:
         for d in _all_drivers:
             try:
@@ -134,143 +82,66 @@ def close_all_drivers():
                 pass
         _all_drivers.clear()
     _tls.driver = None
-    if _display:
-        try:
-            _display.stop()
-        except Exception:
-            pass
-        _display = None
 
 
-# Keep backward compat alias
-close_driver = close_all_drivers
+# ── Age parsing ────────────────────────────────────────────────────────
+
+# Unit → hours multiplier
+_UNIT_HOURS = {
+    "second": 0, "minute": 0, "hour": 1, "day": 24,
+    "week": 168, "month": 720, "year": 8760,
+}
+_SHORT_UNIT_HOURS = {
+    "s": 0, "sec": 0, "m": 0, "min": 0, "h": 1,
+    "d": 24, "w": 168, "mo": 720, "y": 8760, "yr": 8760, "yrs": 8760,
+}
+# "Few X" defaults (≈3 of that unit)
+_FEW_HOURS = {
+    "second": 0, "minute": 0, "hour": 2, "day": 72,
+    "week": 504, "month": 2160, "year": 26280,
+}
 
 
 def parse_age_hours(text):
-    """Parse job posting age and return hours. Handles multiple formats.
-
-    Supports:
-      - Immediate: "just now", "right now", "now", "today", "posted today",
-        "moments ago", "recently", "few seconds ago", "new"
-      - Articles: "a minute ago", "an hour ago", "a day ago", "a month ago"
-      - Qualifiers: "about 2 hours ago", "over 3 days ago", "almost a week ago",
-        "less than an hour ago"
-      - Prefixed: "Posted 3 days ago", "Active 2 days ago", "Updated 1 hour ago"
-      - "Few" expressions: "few minutes ago", "few hours ago", "few days ago"
-      - Long form: "7 minutes ago", "2 hours ago", "3 days ago", "1 year ago"
-      - Plurals with +: "30+ days ago"
-      - Short form: "1d", "2w", "3mo", "5h", "30m", "10s", "1y", "2yr", "2yrs"
-      - Short form with ago: "2d ago", "3h ago", "1mo ago"
-      - Time without "ago": "2 days", "1 month" (some sites omit "ago")
-      - Special: "yesterday", "last week", "last month", "this week"
-      - Absolute dates: "Jan 15, 2025", "15 Jan 2025", "2025-01-15", "01/15/2025"
-    """
+    """Parse a relative time string and return the age in hours (or None)."""
     from datetime import datetime
 
     text = text.lower().strip()
 
-    # ── Immediate / zero-age keywords ──────────────────────────────────
-    immediate_keywords = (
-        "just now", "right now", "moments ago", "moment ago",
-        "recently", "few seconds", "a few seconds", "posted today",
-        "today", "now", "just posted", "actively hiring",
-        "actively recruiting",
-    )
-    if any(kw in text for kw in immediate_keywords):
+    # Immediate / zero-age
+    if any(kw in text for kw in (
+        "just now", "right now", "moments ago", "moment ago", "recently",
+        "few seconds", "a few seconds", "posted today", "today", "now",
+        "just posted", "actively hiring", "actively recruiting",
+    )):
         return 0
-
-    # Also match bare "new" only in standalone time-context (not in company/city names)
     if re.search(r"^\s*new\s*$", text):
         return 0
 
-    # ── "Few <unit> ago" → small value ─────────────────────────────────
-    m = re.search(
-        r"(?:a\s+)?few\s+(second|minute|hour|day|week|month|year)s?\s*(?:ago)?",
-        text,
-    )
+    # "Few <unit> ago"
+    m = re.search(r"(?:a\s+)?few\s+(second|minute|hour|day|week|month|year)s?\s*(?:ago)?", text)
     if m:
-        unit = m.group(1)
-        if unit in ("second", "minute"):
-            return 0
-        elif unit == "hour":
-            return 2                # "few hours" ≈ 2-3
-        elif unit == "day":
-            return 72               # "few days" ≈ 3
-        elif unit == "week":
-            return 504              # "few weeks" ≈ 3
-        elif unit == "month":
-            return 2160             # "few months" ≈ 3
-        elif unit == "year":
-            return 26280            # "few years" ≈ 3
+        return _FEW_HOURS.get(m.group(1), 0)
 
-    # ── Article form: "a minute ago", "an hour ago", "a day ago" ───────
+    # Article form: "a minute ago", "an hour ago"
     m = re.search(
         r"\b(?:about|over|almost|less\s+than|more\s+than)?\s*"
-        r"an?\s+(second|minute|hour|day|week|month|year)\s*(?:ago)?",
-        text,
+        r"an?\s+(second|minute|hour|day|week|month|year)\s*(?:ago)?", text,
     )
     if m:
-        unit = m.group(1)
-        if unit in ("second", "minute"):
-            return 0
-        elif unit == "hour":
-            return 1
-        elif unit == "day":
-            return 24
-        elif unit == "week":
-            return 168
-        elif unit == "month":
-            return 720
-        elif unit == "year":
-            return 8760
+        return _UNIT_HOURS.get(m.group(1), 0)
 
-    # ── Long format: "7 minutes ago", "2 hours ago", "30+ days ago" ────
-    # Handles optional qualifiers ("about", "over", "almost", etc.),
-    # optional plus sign after number, optional "ago" suffix, and
-    # optional prefixes like "Posted", "Active", "Updated".
-    m = re.search(
-        r"(\d+)\+?\s*(second|minute|hour|day|week|month|year)s?"
-        r"(?:\s*(?:ago|old|back))?",
-        text,
-    )
+    # Long form: "7 minutes ago", "30+ days ago"
+    m = re.search(r"(\d+)\+?\s*(second|minute|hour|day|week|month|year)s?(?:\s*(?:ago|old|back))?", text)
     if m:
-        num = int(m.group(1))
-        unit = m.group(2)
-        if unit in ("second", "minute"):
-            return 0
-        elif unit == "hour":
-            return num
-        elif unit == "day":
-            return num * 24
-        elif unit == "week":
-            return num * 168
-        elif unit == "month":
-            return num * 720
-        elif unit == "year":
-            return num * 8760
+        return int(m.group(1)) * _UNIT_HOURS.get(m.group(2), 0)
 
-    # ── Short format: "1d", "2w", "3mo", "5h", "30m", "10s", "1y" ─────
-    # Also handles "2d ago", "1yr", "2yrs", "1yr ago"
+    # Short form: "1d", "2w", "3mo", "5h"
     m = re.search(r"(\d+)\+?\s*(sec|min|mo|yr|yrs|[smhdwy])\w*(?:\s*ago)?", text)
     if m:
-        num = int(m.group(1))
-        unit = m.group(2)
-        if unit in ("s", "sec"):
-            return 0
-        elif unit in ("m", "min"):
-            return 0
-        elif unit == "h":
-            return num
-        elif unit == "d":
-            return num * 24
-        elif unit == "w":
-            return num * 168
-        elif unit in ("mo",):
-            return num * 720
-        elif unit in ("y", "yr", "yrs"):
-            return num * 8760
+        return int(m.group(1)) * _SHORT_UNIT_HOURS.get(m.group(2), 0)
 
-    # ── Special keywords ───────────────────────────────────────────────
+    # Keywords
     if "yesterday" in text:
         return 24
     if "last week" in text or "this week" in text:
@@ -280,39 +151,27 @@ def parse_age_hours(text):
     if "last year" in text:
         return 8760
 
-    # ── Absolute date: "Jan 15, 2025" / "15 Jan 2025" ─────────────────
-    date_formats = [
-        r"%b %d, %Y",     # Jan 15, 2025
-        r"%b %d %Y",      # Jan 15 2025
-        r"%d %b %Y",      # 15 Jan 2025
-        r"%d %b, %Y",     # 15 Jan, 2025
-        r"%Y-%m-%d",      # 2025-01-15
-        r"%m/%d/%Y",      # 01/15/2025
-        r"%d/%m/%Y",      # 15/01/2025
-    ]
-    for fmt in date_formats:
+    # Absolute dates
+    for fmt in ("%b %d, %Y", "%b %d %Y", "%d %b %Y", "%d %b, %Y", "%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"):
         try:
-            parsed = datetime.strptime(text.strip(), fmt)
-            delta = datetime.now() - parsed
+            delta = datetime.now() - datetime.strptime(text.strip(), fmt)
             return max(0, int(delta.total_seconds() / 3600))
         except ValueError:
             continue
 
-    # ── Absolute date without year: "Jan 15" / "15 Jan" ───────────────
-    short_date_formats = [r"%b %d", r"%d %b"]
-    for fmt in short_date_formats:
+    for fmt in ("%b %d", "%d %b"):
         try:
-            parsed = datetime.strptime(text.strip(), fmt)
-            parsed = parsed.replace(year=datetime.now().year)
+            parsed = datetime.strptime(text.strip(), fmt).replace(year=datetime.now().year)
             if parsed > datetime.now():
                 parsed = parsed.replace(year=datetime.now().year - 1)
-            delta = datetime.now() - parsed
-            return max(0, int(delta.total_seconds() / 3600))
+            return max(0, int((datetime.now() - parsed).total_seconds() / 3600))
         except ValueError:
             continue
 
     return None
 
+
+# ── Job filters ────────────────────────────────────────────────────────
 
 VALID_LOCATIONS = ["bangalore", "bengaluru"]
 

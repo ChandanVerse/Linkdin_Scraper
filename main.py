@@ -1,16 +1,13 @@
 """
 main.py — parallel scraping with instant per-job Discord notifications.
 
-Group 1 (Thread 1): LinkedIn
-Group 2 (Thread 2): Internshala → Naukri
+Thread 1: LinkedIn
+Thread 2: Internshala → Naukri
 
-Jobs are sent to Discord the moment they are found and verified as new —
-not after the full scrape cycle finishes.
+Jobs are sent to Discord the moment they are found and verified as new.
 """
 
-import os
 import signal
-import shutil
 import sys
 import threading
 from datetime import datetime
@@ -20,12 +17,10 @@ from config import (
     ENABLE_INTERNSHALA,
     ENABLE_LINKEDIN,
     ENABLE_NAUKRI,
-    LINKEDIN_ACCOUNTS,
     RUN_INTERVAL,
     SEARCH_KEYWORDS,
 )
 
-# ── Graceful shutdown on Ctrl+C ──────────────────────────────────────
 _shutdown = threading.Event()
 
 
@@ -37,23 +32,10 @@ def _handle_sigint(sig, frame):
 signal.signal(signal.SIGINT, _handle_sigint)
 
 
-def _migrate_seen_jobs():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    src = os.path.join(base_dir, "seen_jobs.json")
-    if not os.path.exists(src):
-        return
-    for target_name in ("seen_jobs_linkedin.json", "seen_jobs_others.json"):
-        target = os.path.join(base_dir, target_name)
-        if not os.path.exists(target):
-            shutil.copy2(src, target)
-            print(f"  Migrated {src} -> {target}")
-
-
 def _make_instant_notifier(label: str, tracking_file: str):
     """
     Returns a callback: on_new_job(job) → notify Discord instantly + mark seen.
-
-    Thread-safe: uses a lock to protect the seen-job set and file writes.
+    Thread-safe via internal lock.
     """
     from notifier import send_discord_notification
     from tracker import load_seen_jobs, mark_jobs_seen
@@ -65,21 +47,17 @@ def _make_instant_notifier(label: str, tracking_file: str):
     def on_new_job(job: dict):
         nonlocal seen_jobs, seen_set
         job_id = job["job_id"]
-
         with lock:
             if job_id in seen_set:
-                return  # already notified this run or a previous one
-
+                return
             print(f"  [NOTIFY] {job['title']} at {job['company']} [{label}]")
-            ok = send_discord_notification(job)
-            if ok:
+            if send_discord_notification(job):
                 seen_set.add(job_id)
                 seen_jobs = mark_jobs_seen([job], seen_jobs, tracking_file)
             else:
                 print(f"  [WARN] Discord notify failed for {job_id}")
 
     def reload():
-        """Call at the start of each cycle to pick up any new seen_jobs from disk."""
         nonlocal seen_jobs, seen_set
         with lock:
             seen_jobs = load_seen_jobs(tracking_file)
@@ -104,7 +82,7 @@ def _run_startup_sweep(li_notify):
 
 
 def _run_group1(li_notify):
-    """Group 1: LinkedIn (own Chrome instance)."""
+    """Thread 1: LinkedIn."""
     if ENABLE_LINKEDIN:
         print("\n--- [LinkedIn] (Thread 1) ---")
         try:
@@ -115,17 +93,9 @@ def _run_group1(li_notify):
             from driver import reset_driver
             reset_driver()
 
-    # Clean up this thread's driver
-    from driver import reset_driver
-    reset_driver()
-
 
 def _run_group2(oth_notify):
-    """Group 2: Internshala → Naukri (own Chrome instance)."""
-    from driver import set_profile
-    set_profile("others")
-
-    # ── Internshala ───────────────────────────────────────────────────
+    """Thread 2: Internshala → Naukri."""
     if ENABLE_INTERNSHALA:
         print("\n--- [Internshala] (Thread 2) ---")
         try:
@@ -136,7 +106,6 @@ def _run_group2(oth_notify):
             from driver import reset_driver
             reset_driver()
 
-    # ── Naukri ────────────────────────────────────────────────────────
     if ENABLE_NAUKRI:
         print("\n--- [Naukri] (Thread 2) ---")
         try:
@@ -147,8 +116,6 @@ def _run_group2(oth_notify):
             from driver import reset_driver
             reset_driver()
 
-
-    # Clean up this thread's driver
     from driver import reset_driver
     reset_driver()
 
@@ -158,19 +125,12 @@ def main():
         print("[ERROR] DISCORD_WEBHOOK_URL is not set. Check your .env file.")
         sys.exit(1)
 
-    _migrate_seen_jobs()
-
-    if ENABLE_LINKEDIN and not LINKEDIN_ACCOUNTS:
-        print("[ERROR] ENABLE_LINKEDIN is True but no accounts are configured in .env.")
-        sys.exit(1)
-
     once = "--once" in sys.argv
 
-    # Create per-source instant notifiers (persist across cycles, thread-safe)
-    li_notify  = _make_instant_notifier("LinkedIn",    "seen_jobs_linkedin.json")
-    oth_notify = _make_instant_notifier("Others",      "seen_jobs_others.json")
+    li_notify  = _make_instant_notifier("LinkedIn", "seen_jobs_linkedin.json")
+    oth_notify = _make_instant_notifier("Others",   "seen_jobs_others.json")
 
-    # ── Startup sweep: one 24h search per keyword to catch missed jobs ──
+    # Startup sweep
     if not _shutdown.is_set():
         print(f"\n{'=' * 55}")
         print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Running startup 24h sweep")
@@ -183,34 +143,27 @@ def main():
         print(f"[{now}] Starting scrape cycle (parallel)")
         print("=" * 55)
 
-        # Reload seen-job sets at the top of each cycle
         li_notify.reload()
         oth_notify.reload()
 
-        # Launch both groups in parallel (daemon so they die on exit)
-        t1 = threading.Thread(target=_run_group1, args=(li_notify,), name="Group1", daemon=True)
-        t2 = threading.Thread(target=_run_group2, args=(oth_notify,), name="Group2", daemon=True)
-
+        t1 = threading.Thread(target=_run_group1, args=(li_notify,), name="LinkedIn", daemon=True)
+        t2 = threading.Thread(target=_run_group2, args=(oth_notify,), name="Others",   daemon=True)
         t1.start()
         t2.start()
-
         t1.join()
         t2.join()
 
         if _shutdown.is_set():
             break
-
         if once:
             print("\nDone (--once mode).")
             break
-
         if RUN_INTERVAL > 0:
             print(f"\nCycle complete. Next run in {RUN_INTERVAL}s...")
             _shutdown.wait(timeout=RUN_INTERVAL)
         else:
             print("\nCycle complete. Starting next cycle immediately...")
 
-    # Clean up all browser instances
     print("[INFO] Cleaning up drivers...")
     from driver import close_all_drivers
     close_all_drivers()

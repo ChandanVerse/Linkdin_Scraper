@@ -3,5 +3,3 @@ beautifulsoup4
 lxml
 seleniumbase
 python-dotenv
-xvfbwrapper
-humancursor

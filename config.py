@@ -7,26 +7,6 @@ load_dotenv()
 # Discord webhook URL
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
-def _load_accounts_from_env():
-    accounts = []
-    i = 0
-    while True:
-        email = os.environ.get(f"LINKEDIN_ACCOUNT_{i}_EMAIL")
-        password = os.environ.get(f"LINKEDIN_ACCOUNT_{i}_PASSWORD")
-        if not email or not password:
-            break
-        name = os.environ.get(f"LINKEDIN_ACCOUNT_{i}_NAME", f"Account {i}")
-        accounts.append({"email": email, "password": password, "name": name})
-        i += 1
-    return accounts
-
-LINKEDIN_ACCOUNTS = _load_accounts_from_env()
-
-# ── Rotation settings ──────────────────────────────────────────────────
-ACCOUNT_COOLDOWN_HOURS = 2.0    # hours to cool down an account after a challenge
-MIN_ROTATION_DELAY = 8.0        # min seconds to pause between account switches
-MAX_ROTATION_DELAY = 20.0       # max seconds to pause between account switches
-
 # ── Search settings ────────────────────────────────────────────────────
 SEARCH_KEYWORDS = [
     "Data Scientist",
